@@ -1,0 +1,1431 @@
+{
+    "metadata": {
+        "data_version": "6",
+        "match_id": "SG2_107220218",
+        "participants": [
+            "qeqeo6xTeuD82lzubb7ULM7eYCWcisBU7muZL-Hm9Tux46EZgTCjc8fUDODnb-mQu7HLS5saDF6qWQ",
+            "ziK6C0VVavLYu05gmVkQGe04z0X4ROLfABdDgJYm-6YXxCn8B7VWI0wI9mGvSOa-0XqxtJoEVjSDkg",
+            "KnTwyYOEetxVRAj4c66uvnvjzAfG-dhlDfuMVjgx1cLZX2rmcDIv-HtJ1D3AxfSnfch_z6WKKjlFXA",
+            "Ms3todCgg2FSuFBz1DWmuUBKEdE6EW2MqvZutGOxr8c3KN_q5wF3InJgcc9E2BVuHHlBOAF-GKExpA",
+            "ipX_AeR2s4NZg6vu9A7kPTlmSszAbFdst6jhFBvGhToeerVu6HyvRn6Av_LUed2YhBf9i3Ks-VLROg",
+            "aeuC0Jin8Hnu3J8uzZ58hDRT5MHZGV_4Ba0tg8QgzdV-xAKDCBBjcwWcmrK9bqJO_Kt63x18E4Ckjg",
+            "6rS-IFYKV0KBXAOcWO7DIqGv0FwkwE-xRBfVBXg0hEhunBIuDwZocPjqjVdcXSjnj1pHlyNBIVfRJw",
+            "ry678tMZ44aQueyc8HMt89SLXbvW0r8q6vsf6omeaOf734rBWym2tvz_AflBWjTnUL4nOJ6Khw_WOw"
+        ]
+    },
+    "info": {
+        "endOfGameResult": "GameComplete",
+        "gameCreation": 1760863089000,
+        "gameId": 107220218,
+        "game_datetime": 1760865238861,
+        "game_length": 2085.43994140625,
+        "game_version": "Linux Version 15.20.719.0545 (Oct 14 2025/12:30:46) [PUBLIC] <Releases/15.20>",
+        "mapId": 22,
+        "participants": [
+            {
+                "companion": {
+                    "content_ID": "9e342347-81f4-43a8-8b1f-e3c50bc4896b",
+                    "item_ID": 4003,
+                    "skin_ID": 3,
+                    "species": "PetMiner"
+                },
+                "gold_left": 49,
+                "last_round": 34,
+                "level": 8,
+                "missions": {
+                    "PlayerScore2": 207
+                },
+                "placement": 2,
+                "players_eliminated": 1,
+                "puuid": "qeqeo6xTeuD82lzubb7ULM7eYCWcisBU7muZL-Hm9Tux46EZgTCjc8fUDODnb-mQu7HLS5saDF6qWQ",
+                "riotIdGameName": "Jack",
+                "riotIdTagline": "wind",
+                "time_eliminated": 2074.12548828125,
+                "total_damage_to_players": 96,
+                "traits": [
+                    {
+                        "name": "TFT15_Bastion",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Captain",
+                        "num_units": 1,
+                        "style": 3,
+                        "tier_current": 1,
+                        "tier_total": 1
+                    },
+                    {
+                        "name": "TFT15_Destroyer",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_Edgelord",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_GemForce",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_OldMentor",
+                        "num_units": 1,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Protector",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_SentaiRanger",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_Sniper",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_Strategist",
+                        "num_units": 4,
+                        "style": 4,
+                        "tier_current": 3,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_TheCrew",
+                        "num_units": 5,
+                        "style": 1,
+                        "tier_current": 7,
+                        "tier_total": 7
+                    }
+                ],
+                "units": [
+                    {
+                        "character_id": "TFT15_Sivir",
+                        "itemNames": [
+                            "TFT_Item_Deathblade",
+                            "TFT_Item_UnstableConcoction"
+                        ],
+                        "name": "",
+                        "rarity": 0,
+                        "tier": 3
+                    },
+                    {
+                        "character_id": "TFT15_Malphite",
+                        "itemNames": [
+                            "TFT7_Item_ShimmerscaleMogulsMail",
+                            "TFT_Item_Redemption",
+                            "TFT_Item_GargoyleStoneplate"
+                        ],
+                        "name": "",
+                        "rarity": 0,
+                        "tier": 3
+                    },
+                    {
+                        "character_id": "TFT15_Shen",
+                        "itemNames": [
+                            "TFT_Item_FrozenHeart",
+                            "TFT_Item_AdaptiveHelm",
+                            "TFT_Item_Redemption"
+                        ],
+                        "name": "",
+                        "rarity": 1,
+                        "tier": 3
+                    },
+                    {
+                        "character_id": "TFT15_Janna",
+                        "itemNames": [
+                            "TFT_Item_ThiefsGloves",
+                            "TFT_Item_NightHarvester",
+                            "TFT_Item_JeweledGauntlet"
+                        ],
+                        "name": "",
+                        "rarity": 1,
+                        "tier": 3
+                    },
+                    {
+                        "character_id": "TFT15_Ziggs",
+                        "itemNames": [
+                            "TFT_Item_ArchangelsStaff"
+                        ],
+                        "name": "",
+                        "rarity": 2,
+                        "tier": 3
+                    },
+                    {
+                        "character_id": "TFT15_Ryze",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 1
+                    },
+                    {
+                        "character_id": "TFT15_JarvanIV",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 1
+                    },
+                    {
+                        "character_id": "TFT15_TwistedFate",
+                        "itemNames": [
+                            "TFT_Item_GuinsoosRageblade",
+                            "TFT_Item_MadredsBloodrazor",
+                            "TFT15_Item_SniperEmblemItem"
+                        ],
+                        "name": "",
+                        "rarity": 6,
+                        "tier": 1
+                    },
+                    {
+                        "character_id": "TFT15_Janna",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 1,
+                        "tier": 3
+                    }
+                ],
+                "win": true
+            },
+            {
+                "companion": {
+                    "content_ID": "b83f7c15-188a-43b3-bda3-aaa6d5ce90f0",
+                    "item_ID": 83002,
+                    "skin_ID": 2,
+                    "species": "PetChibiTristana"
+                },
+                "gold_left": 70,
+                "last_round": 29,
+                "level": 8,
+                "missions": {
+                    "PlayerScore2": 86
+                },
+                "placement": 6,
+                "players_eliminated": 0,
+                "puuid": "ziK6C0VVavLYu05gmVkQGe04z0X4ROLfABdDgJYm-6YXxCn8B7VWI0wI9mGvSOa-0XqxtJoEVjSDkg",
+                "riotIdGameName": "ball",
+                "riotIdTagline": "bit",
+                "time_eliminated": 1739.515625,
+                "total_damage_to_players": 94,
+                "traits": [
+                    {
+                        "name": "TFT15_Duelist",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Empyrean",
+                        "num_units": 3,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Heavyweight",
+                        "num_units": 3,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Juggernaut",
+                        "num_units": 4,
+                        "style": 2,
+                        "tier_current": 2,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_OldMentor",
+                        "num_units": 1,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Prodigy",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_SentaiRanger",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_Sniper",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_SoulFighter",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 5
+                    },
+                    {
+                        "name": "TFT15_StarGuardian",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 12
+                    }
+                ],
+                "units": [
+                    {
+                        "character_id": "TFT15_Naafiri",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 0,
+                        "tier": 1
+                    },
+                    {
+                        "character_id": "TFT15_Zac",
+                        "itemNames": [
+                            "TFT_Item_IonicSpark",
+                            "TFT_Item_Redemption",
+                            "TFT_Item_Crownguard"
+                        ],
+                        "name": "",
+                        "rarity": 0,
+                        "tier": 3
+                    },
+                    {
+                        "character_id": "TFT15_Aatrox",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 0,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Jhin",
+                        "itemNames": [
+                            "TFT_Item_InfinityEdge"
+                        ],
+                        "name": "",
+                        "rarity": 1,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Malzahar",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 2,
+                        "tier": 1
+                    },
+                    {
+                        "character_id": "TFT15_Udyr",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 2,
+                        "tier": 1
+                    },
+                    {
+                        "character_id": "TFT15_Sett",
+                        "itemNames": [
+                            "TFT_Item_Redemption"
+                        ],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 1
+                    },
+                    {
+                        "character_id": "TFT15_Poppy",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 1
+                    }
+                ],
+                "win": false
+            },
+            {
+                "companion": {
+                    "content_ID": "f8a8c5c9-7355-4ca8-be02-296a5322c4a1",
+                    "item_ID": 80001,
+                    "skin_ID": 1,
+                    "species": "PetChibiEzreal"
+                },
+                "gold_left": 0,
+                "last_round": 27,
+                "level": 9,
+                "missions": {
+                    "PlayerScore2": 83
+                },
+                "placement": 8,
+                "players_eliminated": 0,
+                "puuid": "KnTwyYOEetxVRAj4c66uvnvjzAfG-dhlDfuMVjgx1cLZX2rmcDIv-HtJ1D3AxfSnfch_z6WKKjlFXA",
+                "riotIdGameName": "Trod",
+                "riotIdTagline": "6866",
+                "time_eliminated": 1663.364990234375,
+                "total_damage_to_players": 41,
+                "traits": [
+                    {
+                        "name": "TFT15_Destroyer",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_DragonFist",
+                        "num_units": 1,
+                        "style": 3,
+                        "tier_current": 1,
+                        "tier_total": 1
+                    },
+                    {
+                        "name": "TFT15_Duelist",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Heavyweight",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Juggernaut",
+                        "num_units": 3,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_OldMentor",
+                        "num_units": 2,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_SentaiRanger",
+                        "num_units": 6,
+                        "style": 2,
+                        "tier_current": 2,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_Spellslinger",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Strategist",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 4
+                    }
+                ],
+                "units": [
+                    {
+                        "character_id": "TFT15_Lucian",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 0,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Aatrox",
+                        "itemNames": [
+                            "TFT_Item_ThiefsGloves",
+                            "TFT_Item_RunaansHurricane",
+                            "TFT_Item_BlueBuff"
+                        ],
+                        "name": "",
+                        "rarity": 0,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Gangplank",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 1,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Udyr",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 2,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Senna",
+                        "itemNames": [
+                            "TFT_Item_WarmogsArmor",
+                            "TFT_Item_WarmogsArmor",
+                            "TFT_Item_MadredsBloodrazor"
+                        ],
+                        "name": "",
+                        "rarity": 2,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Ryze",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 1
+                    },
+                    {
+                        "character_id": "TFT15_Karma",
+                        "itemNames": [
+                            "TFT_Item_RapidFireCannon",
+                            "TFT_Item_BlueBuff"
+                        ],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_JarvanIV",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 1
+                    },
+                    {
+                        "character_id": "tft15_leesin",
+                        "itemNames": [
+                            "TFT_Item_IonicSpark",
+                            "TFT_Item_GiantsBelt"
+                        ],
+                        "name": "",
+                        "rarity": 6,
+                        "tier": 1
+                    },
+                    {
+                        "character_id": "TFT15_Galio",
+                        "itemNames": [
+                            "TFT15_RoboRanger_Core",
+                            "TFT15_RoboRanger_Sword"
+                        ],
+                        "name": "",
+                        "rarity": 9,
+                        "tier": 2
+                    }
+                ],
+                "win": false
+            },
+            {
+                "companion": {
+                    "content_ID": "4bc4f891-8b10-4d54-a8ca-6203583c32eb",
+                    "item_ID": 118002,
+                    "skin_ID": 2,
+                    "species": "PetChibiBriar"
+                },
+                "gold_left": 17,
+                "last_round": 33,
+                "level": 9,
+                "missions": {
+                    "PlayerScore2": 201
+                },
+                "placement": 4,
+                "players_eliminated": 1,
+                "puuid": "Ms3todCgg2FSuFBz1DWmuUBKEdE6EW2MqvZutGOxr8c3KN_q5wF3InJgcc9E2BVuHHlBOAF-GKExpA",
+                "riotIdGameName": "Ghost",
+                "riotIdTagline": "02125",
+                "time_eliminated": 2007.633056640625,
+                "total_damage_to_players": 99,
+                "traits": [
+                    {
+                        "name": "TFT15_Destroyer",
+                        "num_units": 3,
+                        "style": 2,
+                        "tier_current": 2,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_Duelist",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Empyrean",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Heavyweight",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Juggernaut",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_OldMentor",
+                        "num_units": 1,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Protector",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_SentaiRanger",
+                        "num_units": 3,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_Spellslinger",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Strategist",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_SupremeCells",
+                        "num_units": 4,
+                        "style": 4,
+                        "tier_current": 3,
+                        "tier_total": 3
+                    }
+                ],
+                "units": [
+                    {
+                        "character_id": "TFT15_Kennen",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 0,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Aatrox",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 0,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_KaiSa",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 1,
+                        "tier": 1
+                    },
+                    {
+                        "character_id": "TFT15_Darius",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 2,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Senna",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 2,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Akali",
+                        "itemNames": [
+                            "TFT_Item_Quicksilver",
+                            "TFT_Item_Leviathan",
+                            "TFT_Item_Leviathan"
+                        ],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_KSante",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 1
+                    },
+                    {
+                        "character_id": "TFT15_Ryze",
+                        "itemNames": [
+                            "TFT_Item_HextechGunblade",
+                            "TFT_Item_PowerGauntlet",
+                            "TFT_Item_UnstableConcoction"
+                        ],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_JarvanIV",
+                        "itemNames": [
+                            "TFT_Item_Bloodthirster",
+                            "TFT_Item_FrozenHeart",
+                            "TFT_Item_GargoyleStoneplate"
+                        ],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Galio",
+                        "itemNames": [
+                            "TFT15_RoboRanger_Core"
+                        ],
+                        "name": "",
+                        "rarity": 9,
+                        "tier": 1
+                    }
+                ],
+                "win": true
+            },
+            {
+                "companion": {
+                    "content_ID": "bdadb08d-0202-47e9-ba10-4b06590bf4ac",
+                    "item_ID": 10052,
+                    "skin_ID": 52,
+                    "species": "PetSGCat"
+                },
+                "gold_left": 1,
+                "last_round": 28,
+                "level": 8,
+                "missions": {
+                    "PlayerScore2": 86
+                },
+                "placement": 7,
+                "players_eliminated": 0,
+                "puuid": "ipX_AeR2s4NZg6vu9A7kPTlmSszAbFdst6jhFBvGhToeerVu6HyvRn6Av_LUed2YhBf9i3Ks-VLROg",
+                "riotIdGameName": "TTVDude1323",
+                "riotIdTagline": "ngum",
+                "time_eliminated": 1728.795166015625,
+                "total_damage_to_players": 69,
+                "traits": [
+                    {
+                        "name": "TFT15_BattleAcademia",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_Empyrean",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Heavyweight",
+                        "num_units": 6,
+                        "style": 4,
+                        "tier_current": 3,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Juggernaut",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_OldMentor",
+                        "num_units": 1,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Prodigy",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_SentaiRanger",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_StarGuardian",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 12
+                    },
+                    {
+                        "name": "TFT15_SupremeCells",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 3
+                    }
+                ],
+                "units": [
+                    {
+                        "character_id": "TFT15_Zac",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 0,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Aatrox",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 0,
+                        "tier": 1
+                    },
+                    {
+                        "character_id": "TFT15_Kobuko",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 1,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Darius",
+                        "itemNames": [
+                            "TFT_Item_SteraksGage",
+                            "TFT_Item_GuinsoosRageblade"
+                        ],
+                        "name": "",
+                        "rarity": 2,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Malzahar",
+                        "itemNames": [
+                            "TFT9_Item_OrnnHorizonFocus",
+                            "TFT_Item_JeweledGauntlet",
+                            "TFT_Item_BlueBuff"
+                        ],
+                        "name": "",
+                        "rarity": 2,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Malzahar",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 2,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Jayce",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 2,
+                        "tier": 1
+                    },
+                    {
+                        "character_id": "TFT15_Poppy",
+                        "itemNames": [
+                            "TFT_Item_Bloodthirster",
+                            "TFT_Item_FrozenHeart",
+                            "TFT_Item_AdaptiveHelm"
+                        ],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 1
+                    }
+                ],
+                "win": false
+            },
+            {
+                "companion": {
+                    "content_ID": "6ba7ed5e-1faa-47fc-840b-0ccbba3bb09c",
+                    "item_ID": 58003,
+                    "skin_ID": 3,
+                    "species": "PetChibiAkali"
+                },
+                "gold_left": 0,
+                "last_round": 34,
+                "level": 9,
+                "missions": {
+                    "PlayerScore2": 207
+                },
+                "placement": 3,
+                "players_eliminated": 0,
+                "puuid": "aeuC0Jin8Hnu3J8uzZ58hDRT5MHZGV_4Ba0tg8QgzdV-xAKDCBBjcwWcmrK9bqJO_Kt63x18E4Ckjg",
+                "riotIdGameName": "oguri cap",
+                "riotIdTagline": "jrTH",
+                "time_eliminated": 2073.224365234375,
+                "total_damage_to_players": 102,
+                "traits": [
+                    {
+                        "name": "TFT15_Bastion",
+                        "num_units": 6,
+                        "style": 4,
+                        "tier_current": 3,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_BattleAcademia",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_Captain",
+                        "num_units": 1,
+                        "style": 3,
+                        "tier_current": 1,
+                        "tier_total": 1
+                    },
+                    {
+                        "name": "TFT15_Edgelord",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_ElTigre",
+                        "num_units": 1,
+                        "style": 3,
+                        "tier_current": 1,
+                        "tier_total": 1
+                    },
+                    {
+                        "name": "TFT15_GemForce",
+                        "num_units": 2,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_Luchador",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 2
+                    },
+                    {
+                        "name": "TFT15_Rosemother",
+                        "num_units": 1,
+                        "style": 3,
+                        "tier_current": 1,
+                        "tier_total": 1
+                    },
+                    {
+                        "name": "TFT15_SentaiRanger",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_SoulFighter",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 5
+                    },
+                    {
+                        "name": "TFT15_Spellslinger",
+                        "num_units": 3,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_TheCrew",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 7,
+                        "tier_total": 7
+                    }
+                ],
+                "units": [
+                    {
+                        "character_id": "TFT15_XinZhao",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 1,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Shen",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 1,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Swain",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 2,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Leona",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Braum",
+                        "itemNames": [
+                            "TFT_Item_SteraksGage",
+                            "TFT_Item_FrozenHeart"
+                        ],
+                        "name": "",
+                        "rarity": 6,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Gwen",
+                        "itemNames": [
+                            "TFT_Item_ThiefsGloves",
+                            "TFT_Item_RunaansHurricane",
+                            "TFT_Item_MadredsBloodrazor"
+                        ],
+                        "name": "",
+                        "rarity": 6,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Yone",
+                        "itemNames": [
+                            "TFT_Item_Quicksilver",
+                            "TFT_Item_SteraksGage",
+                            "TFT_Item_Deathblade"
+                        ],
+                        "name": "",
+                        "rarity": 6,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_TwistedFate",
+                        "itemNames": [
+                            "TFT_Item_GuinsoosRageblade",
+                            "TFT_Item_MadredsBloodrazor",
+                            "TFT_Item_TitansResolve"
+                        ],
+                        "name": "",
+                        "rarity": 6,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Zyra",
+                        "itemNames": [
+                            "TFT_Item_NeedlesslyLargeRod"
+                        ],
+                        "name": "",
+                        "rarity": 6,
+                        "tier": 1
+                    }
+                ],
+                "win": true
+            },
+            {
+                "companion": {
+                    "content_ID": "d211a79c-f896-41ad-966d-363a8a0f98b8",
+                    "item_ID": 122001,
+                    "skin_ID": 1,
+                    "species": "PetCupCake"
+                },
+                "gold_left": 41,
+                "last_round": 31,
+                "level": 8,
+                "missions": {
+                    "PlayerScore2": 95
+                },
+                "placement": 5,
+                "players_eliminated": 1,
+                "puuid": "6rS-IFYKV0KBXAOcWO7DIqGv0FwkwE-xRBfVBXg0hEhunBIuDwZocPjqjVdcXSjnj1pHlyNBIVfRJw",
+                "riotIdGameName": "NoScoutNoPivot",
+                "riotIdTagline": "8 TGT",
+                "time_eliminated": 1899.2366943359375,
+                "total_damage_to_players": 82,
+                "traits": [
+                    {
+                        "name": "TFT15_Destroyer",
+                        "num_units": 3,
+                        "style": 2,
+                        "tier_current": 2,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_Empyrean",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Heavyweight",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Juggernaut",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_OldMentor",
+                        "num_units": 1,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Protector",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_SentaiRanger",
+                        "num_units": 3,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_Spellslinger",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Strategist",
+                        "num_units": 3,
+                        "style": 2,
+                        "tier_current": 2,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_SupremeCells",
+                        "num_units": 3,
+                        "style": 2,
+                        "tier_current": 2,
+                        "tier_total": 3
+                    }
+                ],
+                "units": [
+                    {
+                        "character_id": "TFT15_Kennen",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 0,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Aatrox",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 0,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Darius",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 2,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Senna",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 2,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Akali",
+                        "itemNames": [
+                            "TFT_Item_Leviathan",
+                            "TFT_Item_Leviathan",
+                            "TFT_Item_Quicksilver"
+                        ],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_KSante",
+                        "itemNames": [
+                            "TFT_Item_Redemption",
+                            "TFT_Item_WarmogsArmor",
+                            "TFT15_Item_ShotcallerEmblemItem"
+                        ],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Ryze",
+                        "itemNames": [
+                            "TFT_Item_PowerGauntlet",
+                            "TFT_Item_RunaansHurricane"
+                        ],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_JarvanIV",
+                        "itemNames": [
+                            "TFT_Item_ChainVest",
+                            "TFT_Item_FrozenHeart"
+                        ],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Galio",
+                        "itemNames": [
+                            "TFT15_RoboRanger_Core"
+                        ],
+                        "name": "",
+                        "rarity": 9,
+                        "tier": 1
+                    }
+                ],
+                "win": false
+            },
+            {
+                "companion": {
+                    "content_ID": "b5ca136c-593c-437c-bcd1-0acca4136aae",
+                    "item_ID": 13009,
+                    "skin_ID": 9,
+                    "species": "PetAkaliDragon"
+                },
+                "gold_left": 5,
+                "last_round": 34,
+                "level": 9,
+                "missions": {
+                    "PlayerScore2": 207
+                },
+                "placement": 1,
+                "players_eliminated": 2,
+                "puuid": "ry678tMZ44aQueyc8HMt89SLXbvW0r8q6vsf6omeaOf734rBWym2tvz_AflBWjTnUL4nOJ6Khw_WOw",
+                "riotIdGameName": "kraugel",
+                "riotIdTagline": "1111",
+                "time_eliminated": 2077.22998046875,
+                "total_damage_to_players": 169,
+                "traits": [
+                    {
+                        "name": "TFT15_Bastion",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_BattleAcademia",
+                        "num_units": 7,
+                        "style": 4,
+                        "tier_current": 3,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_Destroyer",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_Empyrean",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Heavyweight",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_OldMentor",
+                        "num_units": 1,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Prodigy",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_Protector",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 1,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Strategist",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 4
+                    }
+                ],
+                "units": [
+                    {
+                        "character_id": "TFT15_Ezreal",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 0,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Garen",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 0,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Rakan",
+                        "itemNames": [
+                            "TFT_Item_IonicSpark",
+                            "TFT_Item_GargoyleStoneplate",
+                            "TFT_Item_RedBuff"
+                        ],
+                        "name": "",
+                        "rarity": 1,
+                        "tier": 3
+                    },
+                    {
+                        "character_id": "TFT15_Katarina",
+                        "itemNames": [
+                            "TFT_Item_UnstableConcoction",
+                            "TFT_Item_GuardianAngel",
+                            "TFT_Item_Leviathan"
+                        ],
+                        "name": "",
+                        "rarity": 1,
+                        "tier": 3
+                    },
+                    {
+                        "character_id": "TFT15_Jayce",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 2,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_KSante",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 1
+                    },
+                    {
+                        "character_id": "TFT15_Leona",
+                        "itemNames": [
+                            "TFT_Item_AdaptiveHelm"
+                        ],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 2
+                    },
+                    {
+                        "character_id": "TFT15_Ryze",
+                        "itemNames": [
+                            "TFT_Item_SparringGloves"
+                        ],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 1
+                    },
+                    {
+                        "character_id": "TFT15_Yuumi",
+                        "itemNames": [
+                            "TFT_Item_JeweledGauntlet",
+                            "TFT_Item_Leviathan",
+                            "TFT_Item_Artifact_TalismanOfAscension"
+                        ],
+                        "name": "",
+                        "rarity": 4,
+                        "tier": 2
+                    }
+                ],
+                "win": true
+            }
+        ],
+        "queueId": 1100,
+        "queue_id": 1100,
+        "tft_game_type": "standard",
+        "tft_set_core_name": "TFTSet15",
+        "tft_set_number": 15
+    }
+}

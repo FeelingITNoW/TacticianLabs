@@ -1,0 +1,132 @@
+{
+    "metadata": {
+        "data_version": "6",
+        "match_id": "SG2_100999831",
+        "participants": [
+            "1xCWjlsFIt816CFBcH4aJ4qDZH_oUrvszyG8zjoQAAgNlEPbPyoDQrnaKUWsveT-ZwAgtpyISZz8AA"
+        ]
+    },
+    "info": {
+        "endOfGameResult": "Abort_TooFewPlayers",
+        "gameCreation": 1759028205000,
+        "gameId": 100999831,
+        "game_datetime": 1759028236383,
+        "game_length": 23.134666442871094,
+        "game_version": "Linux Version 15.19.715.1836 (Sep 25 2025/16:55:21) [PUBLIC] <Releases/15.19>",
+        "mapId": 22,
+        "participants": [
+            {
+                "companion": {
+                    "content_ID": "0271d879-6ab8-4111-b349-6fc98710ad07",
+                    "item_ID": 108002,
+                    "skin_ID": 2,
+                    "species": "PetChibiJanna"
+                },
+                "event_pve": {
+                    "buddy_name": "TFTEventPM_Buddy_TeemoBeemo"
+                },
+                "gold_left": 2,
+                "last_round": 1,
+                "level": 1,
+                "missions": {
+                    "PlayerScore2": 0
+                },
+                "placement": 2,
+                "players_eliminated": 0,
+                "puuid": "1xCWjlsFIt816CFBcH4aJ4qDZH_oUrvszyG8zjoQAAgNlEPbPyoDQrnaKUWsveT-ZwAgtpyISZz8AA",
+                "pve_score": 0,
+                "pve_wonrun": true,
+                "riotIdGameName": "Hokkau",
+                "riotIdTagline": "512",
+                "time_eliminated": 23.134666442871094,
+                "total_damage_to_players": 1,
+                "traits": [
+                    {
+                        "name": "TFT15_Protector",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 3
+                    },
+                    {
+                        "name": "TFT15_Strategist",
+                        "num_units": 1,
+                        "style": 0,
+                        "tier_current": 0,
+                        "tier_total": 4
+                    },
+                    {
+                        "name": "TFT15_TheCrew",
+                        "num_units": 2,
+                        "style": 1,
+                        "tier_current": 7,
+                        "tier_total": 7
+                    }
+                ],
+                "units": [
+                    {
+                        "character_id": "TFT15_Malphite",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 0,
+                        "tier": 1
+                    },
+                    {
+                        "character_id": "TFT15_Ziggs",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 2,
+                        "tier": 1
+                    }
+                ],
+                "win": false
+            },
+            {
+                "companion": {
+                    "content_ID": "3c13263e-e76d-4548-b383-a285f2f61ec3",
+                    "item_ID": 25052,
+                    "skin_ID": 52,
+                    "species": "PetAoShin"
+                },
+                "event_pve": {
+                    "buddy_name": "TFTEventPM_Buddy_TeemoBeemo"
+                },
+                "gold_left": 0,
+                "last_round": 1,
+                "level": 3,
+                "placement": 1,
+                "players_eliminated": 0,
+                "puuid": "BOT",
+                "pve_score": 0,
+                "pve_wonrun": true,
+                "riotIdGameName": "Kaisa bot",
+                "riotIdTagline": "BOT",
+                "time_eliminated": 23.134666442871094,
+                "total_damage_to_players": 0,
+                "traits": [],
+                "units": [
+                    {
+                        "character_id": "TFTEventPM_ChaosMinionMelee",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 9,
+                        "tier": 1
+                    },
+                    {
+                        "character_id": "TFTEventPM_ChaosMinionMelee",
+                        "itemNames": [],
+                        "name": "",
+                        "rarity": 9,
+                        "tier": 1
+                    }
+                ],
+                "win": true
+            }
+        ],
+        "queueId": 6130,
+        "queue_id": 6130,
+        "tft_game_type": "standard",
+        "tft_set_core_name": "TFTSet15",
+        "tft_set_number": 15
+    }
+}
