@@ -45,9 +45,9 @@ def get_match_history_by_date(puuid: str, date: datetime, start_index=0, count=2
     response = requests.get(url=match_history_url, params=params, headers=headers)
     return response.json()
 
-def get_last_100_matches(puuid: str):
+def get_last_100_matches(puuid: str, region: str):
     headers = {"X-Riot-Token": RIOT_API_KEY}
-    match_history_url = f"https://sea.api.riotgames.com/tft/match/v1/matches/by-puuid/{puuid}/ids?"
+    match_history_url = f"https://{region}.api.riotgames.com/tft/match/v1/matches/by-puuid/{puuid}/ids?"
     params = {
         "count": 100
     }
