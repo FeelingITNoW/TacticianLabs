@@ -1,12 +1,16 @@
 from datetime import datetime
+import asyncio
 import json
 import sys
 import requests
 import pandas as pd
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
 
 # Store your Riot API key as an environment variable for security
-RIOT_API_KEY = "RGAPI-3be20071-2c9f-4889-bc80-cbf0a23d0bd1"
+RIOT_API_KEY = os.getenv('API_KEY')
 
 HTTP_API_URL = "https://sea.api.riotgames.com/tft/match/v1/matches/SG2_101399858"
 HTTP_GET_CHALLENGERS_API_URL = "https://sg2.api.riotgames.com/tft/league/v1/challenger?queue=RANKED_TFT"
@@ -40,6 +44,16 @@ def get_match_history_by_date(puuid: str, date: datetime, start_index=0, count=2
     }
     response = requests.get(url=match_history_url, params=params, headers=headers)
     return response.json()
+
+def get_last_100_matches(puuid: str, region: str):
+    headers = {"X-Riot-Token": RIOT_API_KEY}
+    match_history_url = f"https://{region}.api.riotgames.com/tft/match/v1/matches/by-puuid/{puuid}/ids?"
+    params = {
+        "count": 100
+    }
+    response = requests.get(url=match_history_url, params=params, headers=headers)
+    return response.json()
+    
 
 def get_challengers():
     headers = {"X-Riot-Token": RIOT_API_KEY}
@@ -93,18 +107,20 @@ def create_composition(match_data_row: dict, match_id: str):
     composition_dataframe.to_csv(f"files/composition/{match_id}_{match_data_row['puuid']}.csv", index=False)
     return composition_dict
 
-
-if __name__ == "__main__":
+async def get_challenger_match_data():
     challengers = get_challengers()
+    challengers = get_grandmasters()
     for day in range(12, 17):
         dt = datetime(2025, 10, day, 0, 0)
         for challenger in challengers:
             puuid = challenger['puuid']
-            match_history_by_date = get_match_history_by_date(puuid=puuid, count=100, date=dt)
+            await asyncio.sleep(2)
+            #match_history_by_date = get_match_history_by_date(puuid=puuid, count=100, date=dt)
+            last_100_matches = get_last_100_matches(puuid=puuid)
             with open("matches_queued.txt", "r") as queue_file_reader:
                 match_list = queue_file_reader.read().split("\n")
             with open("matches_queued.txt", "a") as queue_file_writer:
-                for match_id in match_history_by_date:
+                for match_id in last_100_matches:
                     if match_id == "status":
                         sys.exit(0)
 
@@ -112,10 +128,15 @@ if __name__ == "__main__":
                         print(f"skipped {match_id}")
                         continue
                     
+                    await asyncio.sleep(2)
                     match_list.append(match_id)  
                     print(f"added {match_id}")
+                    with open(f"files/match/{match_id}.json", "w") as f:
+                        json.dump(get_match_data(match_id=match_id), f, indent=4)
                     queue_file_writer.write(match_id + "\n")
-        print(f"done with Oct {day}")
+            print(f"done with {puuid}")
 
-        
-    
+
+
+if __name__ == "__main__":
+    asyncio.run(get_challenger_match_data())
