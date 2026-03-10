@@ -12,7 +12,6 @@ load_dotenv()
 
 
 
-# TODO: Refactor this function to get data straight from the API instead of reading from JSON files.
 def parse_composition_data(match_data: dict, client: Client):
     # Fields needed for match table:
     # - match_id (from file name)
@@ -126,30 +125,8 @@ def prepare_match_table(tft_set_number: int, patch_number: float, client: Client
 
     return
     
-def create_composition(match_data_row: dict, match_id: str):
-    composition_dict = dict()
-    composition_dict["info"] = dict()
-    composition_dict['info']['match_id'] = match_id
-    composition_dict['info']['placement'] = match_data_row["placement"]
-    units = []
-    for unit in match_data_row['units']:
-        units.append(unit)
-    composition_dict['units'] = units
-    normalized = pd.json_normalize(composition_dict)
-    composition_dataframe = pd.DataFrame(normalized)
-    composition_dataframe.to_csv(f"files/composition/{match_id}_{match_data_row['puuid']}.csv", index=False)
-    return composition_dict
-
 if __name__ == "__main__":
     url: str = os.environ.get('supabase_url')
     key: str = os.environ.get('supabase_key')
     supabase: Client = create_client(url, key)
     parse_composition_data("../files/match/SG2_134655367.json", client=supabase)
-    # match_dir = Path("../files/match")
-    # files = [str(p) for p in match_dir.glob("*.json")]
-    # print(files)
-    # for match_id in files:
-    #     if match_id == "status":
-    #         sys.exit(0)
-    #     parse_match_data(match_id, supabase)
-    #parse_match_data("../files/match/EUW1_7564056931.json", supabase)
