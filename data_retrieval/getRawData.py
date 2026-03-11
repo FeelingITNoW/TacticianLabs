@@ -296,7 +296,6 @@ async def get_challenger_match_data(region: str, client: Client) -> None:
     for challenger in challengers:
         puuid = challenger["puuid"]
         print(f"Fetching match history for challenger (PUUID: {puuid}) in region {region}...")
-        await asyncio.sleep(2)
         last_100_matches = get_last_100_matches(region=match_region_string, puuid=puuid)
         if "status" in last_100_matches:
             sys.exit(0)
