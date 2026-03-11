@@ -1,0 +1,30 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tftdataanalyzer-dev
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run dev -- --host 0.0.0.0 --port 3000
+    stdin_open: true
+    tty: true
+
+  collector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tftdataanalyzer-collector
+    profiles:
+      - collector
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python3 data_retrieval/getRawData.py
