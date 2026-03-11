@@ -1,6 +1,5 @@
 from datetime import datetime
 import asyncio
-import json
 import sys
 import time
 import uuid
@@ -332,6 +331,4 @@ if __name__ == "__main__":
     _url: str = os.environ.get("supabase_url")
     _key: str = os.environ.get("supabase_key")
     _client: Client = create_client(_url, _key)
-    #populate_player_table_with_tiered_data(region="SG2", client=_client)
     asyncio.run(get_challenger_match_data("SG2", _client))
-    #print(asyncio.run(get_all_players_below_masters("euw1")))

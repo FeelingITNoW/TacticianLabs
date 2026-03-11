@@ -1,15 +1,8 @@
-import json
 import os
-import sys
-import uuid
-from anyio import Path
-from pathlib import Path
-import pandas as pd 
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
 load_dotenv()
-
 
 
 def parse_composition_data(match_data: dict, client: Client):
