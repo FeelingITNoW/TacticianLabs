@@ -45,7 +45,6 @@ def parse_composition_data(match_data: dict, client: Client):
         
         # Uploading traits to databse, utilize composition_id as foreign key to link traits to composition
         for trait in traits:
-            print(f"Trait: {trait['name']}, Tier: {trait['tier_current']}, Num Units: {trait['num_units']}")
             trait_to_upload = {
                 "composition_id": composition_id,
                 "name": trait['name'],
@@ -89,8 +88,6 @@ def parse_composition_data(match_data: dict, client: Client):
                     pass
                 else:
                     raise
-            print(f"Unit: {unit['character_id']}, Tier: {unit['tier']}, Items: {unit['itemNames']}")
-
 
 def prepare_composition_table(client: Client, composition_dict: dict):
     try:
