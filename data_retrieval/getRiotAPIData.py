@@ -306,8 +306,8 @@ async def get_challenger_match_data(region: str, client: Client) -> None:
     print(f"Collected {len(new_match_ids)} new match IDs. Fetching and uploading…")
 
     # --- Phase 2: fetch + upload concurrently, respecting Riot rate limits ---
-    # Personal keys: 20 req/s, 100 req/2 min → conservative concurrency of 5
-    semaphore = asyncio.Semaphore(5)
+    # Keep DB write pressure moderate to avoid transport resets from PostgREST.
+    semaphore = asyncio.Semaphore(2)
     loop = asyncio.get_event_loop()
 
     async def _fetch_and_upload(match_id: str) -> None:
