@@ -39,6 +39,31 @@ def _execute_with_retry(builder, max_retries: int = 6):
             raise
 
 
+def _chunk_rows(rows: list[dict], chunk_size: int) -> list[list[dict]]:
+    return [rows[i:i + chunk_size] for i in range(0, len(rows), chunk_size)]
+
+
+def _insert_rows_in_chunks(client: Client, table_name: str, rows: list[dict], chunk_size: int = 200) -> None:
+    if not rows:
+        return
+
+    for chunk in _chunk_rows(rows, chunk_size):
+        try:
+            _execute_with_retry(client.table(table_name).insert(chunk))
+        except Exception as exc:
+            # If a chunk contains duplicates, retry row-by-row so non-duplicates still insert.
+            if "23505" in str(exc):
+                for row in chunk:
+                    try:
+                        _execute_with_retry(client.table(table_name).insert(row))
+                    except Exception as row_exc:
+                        if "23505" in str(row_exc):
+                            continue
+                        raise
+            else:
+                raise
+
+
 def parse_composition_data(match_data: dict, client: Client):
     # Fields needed for match table:
     # - match_id (from file name)
@@ -49,74 +74,85 @@ def parse_composition_data(match_data: dict, client: Client):
     match_uuid = match_id
     tft_set_number = match_data["info"]["tft_set_number"]
     patch_number = float(match_data["info"]["game_version"].split(" ")[2][0:4])
-    prepare_match_table(tft_set_number, patch_number, client, match_uuid)
+    game_datetime = match_data["info"].get("game_datetime")
+    game_length = match_data["info"].get("game_length")
+
+    match_rows = [
+        {
+            "set": tft_set_number,
+            "patch": patch_number,
+            "uuid": match_uuid,
+            "datetime": game_datetime,
+            "game_length": game_length,
+        }
+    ]
+    _insert_rows_in_chunks(client, "match", match_rows)
     
     # - match_id (from file name)
     # player id 
     # placement
     # level
     participants = match_data["info"]["participants"]
+
+    # Build all composition rows first, then insert in a single batch flow.
+    composition_rows: list[dict] = []
     for participant in participants:
-        player_id = participant["puuid"]
-        placement = participant["placement"]
-        level = participant["level"]
-        composition_to_upload = {
-            "match_id": match_uuid,
-            "player_id": player_id,
-            "placement": placement,
-            "level": level    
-        }
-        composition_id = prepare_composition_table(client, composition_to_upload)
+        composition_rows.append(
+            {
+                "match_id": match_uuid,
+                "player_id": participant["puuid"],
+                "placement": participant["placement"],
+                "level": participant["level"],
+            }
+        )
+
+    _insert_rows_in_chunks(client, "composition", composition_rows)
+
+    # Fetch composition ids in one query so traits/units can be batched by FK.
+    player_ids = [row["player_id"] for row in composition_rows]
+    composition_lookup: dict[str, int] = {}
+    if player_ids:
+        existing_compositions = _execute_with_retry(
+            client.table("composition")
+            .select("id,player_id")
+            .eq("match_id", match_uuid)
+            .in_("player_id", player_ids)
+        )
+        for row in existing_compositions.data:
+            composition_lookup[row["player_id"]] = row["id"]
+
+    trait_rows: list[dict] = []
+    unit_rows: list[dict] = []
+    for participant in participants:
+        composition_id = composition_lookup.get(participant["puuid"])
         if composition_id is None:
             continue
-        units = participant["units"]
-        traits = participant["traits"]
-        
-        # Uploading traits to databse, utilize composition_id as foreign key to link traits to composition
-        for trait in traits:
-            trait_to_upload = {
-                "composition_id": composition_id,
-                "name": trait['name'],
-                "current_tier": trait['tier_current'],
-                "num_units": trait['num_units'],
-                "style": trait['style'],
-                "tier_total": trait['tier_total']
-            }
-            try:
-                response = (
-                    client.table("traits")
-                    .insert(trait_to_upload)
-                )
-                _execute_with_retry(response)
-            except Exception as e:
-                # PostgreSQL duplicate key error code is 23505, if the trait already exists in the database, we can skip it and move on to the next one
-                if "23505" in str(e):
-                    #do nothing, the trait already exists in the database
-                    pass
-                else:
-                    raise
-        # Uploading units to database, utilize composition_id as foreign key to link units to composition
-        for unit in units:
-            unit_to_upload = {
-                "composition_id": composition_id,
-                "character_id": unit['character_id'],
-                "tier": unit['tier'],
-                "rarity": unit['rarity'],
-                "items": unit['itemNames']
-            }
-            try:
-                response = (
-                    client.table("unit")
-                    .insert(unit_to_upload)
-                )
-                _execute_with_retry(response)
-            except Exception as e:
-                # PostgreSQL duplicate key error code is 23505, if the unit already exists in the database, we can skip it and move on to the next one
-                if "23505" in str(e):
-                    #do nothing, the unit already exists in the database
-                    pass
-                else:
-                    raise
+
+        for trait in participant["traits"]:
+            trait_rows.append(
+                {
+                    "composition_id": composition_id,
+                    "name": trait["name"],
+                    "current_tier": trait["tier_current"],
+                    "num_units": trait["num_units"],
+                    "style": trait["style"],
+                    "tier_total": trait["tier_total"],
+                }
+            )
+
+        for unit in participant["units"]:
+            unit_rows.append(
+                {
+                    "composition_id": composition_id,
+                    "character_id": unit["character_id"],
+                    "tier": unit["tier"],
+                    "rarity": unit["rarity"],
+                    "items": unit["itemNames"],
+                }
+            )
+
+    _insert_rows_in_chunks(client, "traits", trait_rows)
+    _insert_rows_in_chunks(client, "unit", unit_rows)
 
 def prepare_composition_table(client: Client, composition_dict: dict):
     try:
@@ -141,11 +177,11 @@ def prepare_composition_table(client: Client, composition_dict: dict):
             raise
     return response.data[0]['id']
 
-def prepare_match_table(tft_set_number: int, patch_number: float, client: Client, match_uuid: str):
+def prepare_match_table(tft_set_number: int, patch_number: float, client: Client, match_uuid: str, datetime: int, gamelength: float ):
     try:
         response = _execute_with_retry(
             client.table("match")
-            .insert({"set": tft_set_number, "patch": patch_number, "uuid": match_uuid})
+            .insert({"set": tft_set_number, "patch": patch_number, "uuid": match_uuid, "datetime": datetime, "game_length": gamelength})
         )
     except Exception as e: 
         # PostgreSQL duplicate key error code is 23505, if the match already exists in the database, we can skip it and move on to the next one
