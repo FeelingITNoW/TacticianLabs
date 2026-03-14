@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta
 import asyncio
 import sys
 import time
@@ -99,13 +99,10 @@ def get_match_history(puuid: str, region: str, start_index=0, end_index=20):
     response = riot_get(url=match_history_url)
     return response.json()
 
-def get_match_history_by_date(puuid: str, date: datetime, start_index=0, count=20):
-    epoch_seconds_start = int(date.timestamp())
-    epoch_seconds_end = epoch_seconds_start + SECONDS_IN_A_DAY
-    match_history_url = f"https://sea.api.riotgames.com/tft/match/v1/matches/by-puuid/{puuid}/ids?"
+def get_match_history_from_last_n_days(puuid: str, startTime: int,region: str, start_index=0, count=100 ):
+    match_history_url = f"https://{region}.api.riotgames.com/tft/match/v1/matches/by-puuid/{puuid}/ids?"
     params = {
-        "startTime": epoch_seconds_start,
-        "endTime": epoch_seconds_end,
+        "startTime": startTime,
         "count": count
     }
     response = riot_get(url=match_history_url, params=params)
@@ -290,16 +287,17 @@ async def get_challenger_match_data(region: str, client: Client) -> None:
     challengers = get_challengers(region=region)
     matches_in_db_response = (client.table("match").select("uuid").execute())
     matches_in_db = matches_in_db_response.data
-
+    
     new_match_ids: list[str] = []
     for challenger in challengers:
         puuid = challenger["puuid"]
         print(f"Fetching match history for challenger (PUUID: {puuid}) in region {region}...")
-        last_100_matches = get_last_100_matches(region=match_region_string, puuid=puuid)
-        if "status" in last_100_matches:
+        retrieval_start_time = get_unix_timestamp_from_n_days_ago(9)
+        match_list = get_match_history_from_last_n_days(puuid=puuid, startTime=retrieval_start_time, region=match_region_string)    
+        if "status" in match_list:
             sys.exit(0)
-        for match_id in last_100_matches:
-            if match_id not in [m["uuid"] for m in matches_in_db] and match_id not in new_match_ids:
+        for match_id in match_list:
+            if match_id not in matches_in_db and match_id not in new_match_ids:
                 print('added match: ', match_id)
                 new_match_ids.append(match_id)
 
@@ -325,7 +323,12 @@ async def get_challenger_match_data(region: str, client: Client) -> None:
 
     await asyncio.gather(*[_fetch_and_upload(mid) for mid in new_match_ids])
 
-
+def get_unix_timestamp_from_n_days_ago(n:int):
+    date_today = date.today()
+    target_date = date_today - timedelta(days=n)
+    start_of_target_day_local = datetime.combine(target_date, datetime.min.time())
+    unix_timestamp = time.mktime(start_of_target_day_local.timetuple())
+    return int(unix_timestamp)
 
 if __name__ == "__main__":
     _url: str = os.environ.get("supabase_url")
