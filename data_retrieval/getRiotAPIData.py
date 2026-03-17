@@ -3,7 +3,7 @@ import asyncio
 import sys
 import time
 import uuid
-import requests
+import httpx
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -76,14 +76,14 @@ def _ensure_riot_api_key() -> None:
     )
 
 
-def riot_get(url: str, params: dict | None = None):
+async def riot_get(client: httpx.AsyncClient, url: str, params: dict | None = None) -> httpx.Response:
     _ensure_riot_api_key()
     request_params = dict(params or {})
     request_params["api_key"] = RIOT_API_KEY
-    response = requests.get(url=url, params=request_params, timeout=30)
+    response = await client.get(url, params=request_params, timeout=30)
     try:
         response.raise_for_status()
-    except requests.HTTPError as exc:
+    except httpx.HTTPStatusError as exc:
         if response.status_code == 401:
             raise RuntimeError(
                 "Riot API returned 401 Unauthorized. Your key is missing, expired, or invalid. "
@@ -94,47 +94,47 @@ def riot_get(url: str, params: dict | None = None):
     return response
 
 
-def get_match_history(puuid: str, region: str, start_index=0, end_index=20):
+async def get_match_history(client: httpx.AsyncClient, puuid: str, region: str, start_index=0, end_index=20):
     match_history_url = f"https://{region}.api.riotgames.com/tft/match/v1/matches/by-puuid/{puuid}/ids?start={start_index}&count={end_index}"
-    response = riot_get(url=match_history_url)
+    response = await riot_get(client, url=match_history_url)
     return response.json()
 
-def get_match_history_from_last_n_days(puuid: str, startTime: int,region: str, start_index=0, count=100 ):
+async def get_match_history_from_last_n_days(client: httpx.AsyncClient, puuid: str, startTime: int, region: str, start_index=0, count=100):
     match_history_url = f"https://{region}.api.riotgames.com/tft/match/v1/matches/by-puuid/{puuid}/ids?"
     params = {
         "startTime": startTime,
         "count": count
     }
-    response = riot_get(url=match_history_url, params=params)
+    response = await riot_get(client, url=match_history_url, params=params)
     return response.json()
 
-def get_last_100_matches(puuid: str, region: str):
+async def get_last_100_matches(client: httpx.AsyncClient, puuid: str, region: str):
     match_history_url = f"https://{region}.api.riotgames.com/tft/match/v1/matches/by-puuid/{puuid}/ids?"
     params = {
         "count": 100
     }
-    response = riot_get(url=match_history_url, params=params)
+    response = await riot_get(client, url=match_history_url, params=params)
     return response.json()
     
-def get_challengers(region: str):
+async def get_challengers(client: httpx.AsyncClient, region: str):
     HTTP_GET_CHALLENGERS_API_URL = f"https://{region}.api.riotgames.com/tft/league/v1/challenger?queue=RANKED_TFT"
-    response = riot_get(url=HTTP_GET_CHALLENGERS_API_URL)
+    response = await riot_get(client, url=HTTP_GET_CHALLENGERS_API_URL)
     challengers = response.json()['entries']
     return challengers
 
-def get_grandmasters(region: str):
+async def get_grandmasters(client: httpx.AsyncClient, region: str):
     HTTP_GET_GRANDMASTERS_API_URL = f"https://{region}.api.riotgames.com/tft/league/v1/grandmaster?queue=RANKED_TFT"
-    response = riot_get(url=HTTP_GET_GRANDMASTERS_API_URL)
+    response = await riot_get(client, url=HTTP_GET_GRANDMASTERS_API_URL)
     grandmasters = response.json()['entries']
     return grandmasters
 
-def get_masters(region: str):
+async def get_masters(client: httpx.AsyncClient, region: str):
     HTTP_GET_MASTERS_API_URL = f"https://{region}.api.riotgames.com/tft/league/v1/master?queue=RANKED_TFT"
-    response = riot_get(url=HTTP_GET_MASTERS_API_URL)
+    response = await riot_get(client, url=HTTP_GET_MASTERS_API_URL)
     masters = response.json()['entries']
     return masters
 
-async def get_all_players_below_masters(region: str, tier=None, division=None):
+async def get_all_players_below_masters(client: httpx.AsyncClient, region: str, tier=None, division=None):
     # Tiers:  IRON, BRONZE, SILVER, GOLD, PLATINUM, EMERALD, DIAMOND
     # Divisions: I, II, III, IV
     players = []
@@ -146,7 +146,7 @@ async def get_all_players_below_masters(region: str, tier=None, division=None):
                 url = f"https://{region}.api.riotgames.com/tft/league/v1/entries/{tier}/{division}"
                 params = {"queue": "RANKED_TFT", "page": page}
                 
-                response = riot_get(url=url, params=params)
+                response = await riot_get(client, url=url, params=params)
                 data = response.json()
 
                 if not data:  # stop when no more players on this page
@@ -158,36 +158,36 @@ async def get_all_players_below_masters(region: str, tier=None, division=None):
             print(f"done with {tier} {division}")
     return players
 
-def riot_get_with_retry(url: str, params: dict | None = None, max_retries: int = 5):
+async def riot_get_with_retry(client: httpx.AsyncClient, url: str, params: dict | None = None, max_retries: int = 5) -> httpx.Response:
     """Wraps riot_get with exponential backoff for 429 (rate-limited) and transient network errors."""
     delay = 1
     for attempt in range(max_retries):
         try:
-            return riot_get(url=url, params=params)
-        except requests.HTTPError as exc:
+            return await riot_get(client, url=url, params=params)
+        except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 429:
                 retry_after = int(exc.response.headers.get("Retry-After", delay))
                 print(f"Rate limited. Retrying after {retry_after}s (attempt {attempt + 1}/{max_retries})")
-                time.sleep(retry_after)
+                await asyncio.sleep(retry_after)
                 delay = min(delay * 2, 120)
             else:
                 raise
-        except requests.ConnectionError as exc:
+        except httpx.ConnectError as exc:
             if attempt < max_retries - 1:
                 print(f"Network error, retrying in {delay}s (attempt {attempt + 1}/{max_retries}): {exc}")
-                time.sleep(delay)
+                await asyncio.sleep(delay)
                 delay = min(delay * 2, 120)
             else:
                 raise
     raise RuntimeError(f"All {max_retries} retries exhausted for {url}")
 
 
-def get_match_data(match_id: str, region: str):
+async def get_match_data(client: httpx.AsyncClient, match_id: str, region: str):
     get_match_data_url = f"https://{region}.api.riotgames.com/tft/match/v1/matches/{match_id}"
-    response = riot_get_with_retry(url=get_match_data_url)
+    response = await riot_get_with_retry(client, url=get_match_data_url)
     return response.json()
 
-def prepare_player_data(puuid: str, region: str, client: Client):
+async def prepare_player_data(client: httpx.AsyncClient, puuid: str, region: str, db_client: Client):
     api_region_map = {
         "NA1": "AMERICAS",
         "BR1": "AMERICAS",
@@ -212,8 +212,8 @@ def prepare_player_data(puuid: str, region: str, client: Client):
         "VN2": "ASIA",
     }
     mapped_region = api_region_map.get(region)
-    account_data = get_account_name_from_puuid(puuid=puuid, region=mapped_region)
-    league_data = get_player_league_data(puuid=puuid, region=region)
+    account_data = await get_account_name_from_puuid(client, puuid=puuid, region=mapped_region)
+    league_data = await get_player_league_data(client, puuid=puuid, region=region)
     player_dict = dict()
     player_dict["uuid"] = puuid
     player_dict["tier"] = league_data[0]["tier"] if league_data else "UNRANKED"
@@ -224,7 +224,7 @@ def prepare_player_data(puuid: str, region: str, client: Client):
 
     try:
         response = (
-            client.table("player")
+            db_client.table("player")
             .insert(player_dict)
             .execute()
         )
@@ -238,17 +238,17 @@ def prepare_player_data(puuid: str, region: str, client: Client):
     return player_dict 
 
 
-def get_account_name_from_puuid(puuid: str, region: str):
+async def get_account_name_from_puuid(client: httpx.AsyncClient, puuid: str, region: str):
     get_summoner_data_url = f"https://{region}.api.riotgames.com/riot/account/v1/accounts/by-puuid/{puuid}"
-    response = riot_get_with_retry(url=get_summoner_data_url)
+    response = await riot_get_with_retry(client, url=get_summoner_data_url)
     return response.json()
 
-def get_player_league_data(puuid:str, region: str):
+async def get_player_league_data(client: httpx.AsyncClient, puuid: str, region: str):
     get_league_data_url = f"https://{region}.api.riotgames.com/tft/league/v1/by-puuid/{puuid}"
-    response = riot_get_with_retry(url=get_league_data_url)
+    response = await riot_get_with_retry(client, url=get_league_data_url)
     return response.json()
 
-async def get_tiered_match_data(tier: str, region: str):
+async def get_tiered_match_data(client: httpx.AsyncClient, tier: str, region: str):
     if tier not in RANK_TIERS:
         return ["no tier specified"]
     if region not in RIOT_REGIONS:
@@ -261,7 +261,7 @@ async def get_tiered_match_data(tier: str, region: str):
             await asyncio.sleep(2)
             url = f"https://{region}.api.riotgames.com/tft/league/v1/entries/{tier}/{division}"
             params = {"queue": "RANKED_TFT", "page": page}
-            response = riot_get(url=url, params=params)
+            response = await riot_get(client, url=url, params=params)
             data = response.json()
 
             if not data:  # stop when no more players on this page
@@ -271,21 +271,21 @@ async def get_tiered_match_data(tier: str, region: str):
             page += 1       
     return players
 
-def populate_player_table_with_tiered_data(region: str, client: Client):
-    for player in get_challengers(region=region):
-        prepare_player_data(puuid=player["puuid"], region=region, client=client)
-    for player in get_grandmasters(region=region):
-        prepare_player_data(puuid=player["puuid"], region=region, client=client)
-    for player in get_masters(region=region):
-        prepare_player_data(puuid=player["puuid"], region=region, client=client)
+async def populate_player_table_with_tiered_data(client: httpx.AsyncClient, region: str, db_client: Client):
+    for player in await get_challengers(client, region=region):
+        await prepare_player_data(client, puuid=player["puuid"], region=region, db_client=db_client)
+    for player in await get_grandmasters(client, region=region):
+        await prepare_player_data(client, puuid=player["puuid"], region=region, db_client=db_client)
+    for player in await get_masters(client, region=region):
+        await prepare_player_data(client, puuid=player["puuid"], region=region, db_client=db_client)
     
 
-async def get_challenger_match_data(region: str, client: Client) -> None:
+async def get_challenger_match_data(client: httpx.AsyncClient, region: str, db_client: Client) -> None:
     match_region_string = RIOT_REGIONS_MAP[region]
 
     # --- Phase 1: collect all unique new match IDs from every challenger ---
-    challengers = get_challengers(region=region)
-    matches_in_db_response = (client.table("match").select("uuid").execute())
+    challengers = await get_challengers(client, region=region)
+    matches_in_db_response = (db_client.table("match").select("uuid").execute())
     matches_in_db = matches_in_db_response.data
     
     new_match_ids: list[str] = []
@@ -293,7 +293,7 @@ async def get_challenger_match_data(region: str, client: Client) -> None:
         puuid = challenger["puuid"]
         print(f"Fetching match history for challenger (PUUID: {puuid}) in region {region}...")
         retrieval_start_time = get_unix_timestamp_from_n_days_ago(9)
-        match_list = get_match_history_from_last_n_days(puuid=puuid, startTime=retrieval_start_time, region=match_region_string)    
+        match_list = await get_match_history_from_last_n_days(client, puuid=puuid, startTime=retrieval_start_time, region=match_region_string)    
         if "status" in match_list:
             sys.exit(0)
         for match_id in match_list:
@@ -306,18 +306,15 @@ async def get_challenger_match_data(region: str, client: Client) -> None:
     # --- Phase 2: fetch + upload concurrently, respecting Riot rate limits ---
     # Keep DB write pressure moderate to avoid transport resets from PostgREST.
     semaphore = asyncio.Semaphore(2)
-    loop = asyncio.get_event_loop()
 
     async def _fetch_and_upload(match_id: str) -> None:
         async with semaphore:
-            match_data = await loop.run_in_executor(
-                None,
-                lambda mid=match_id: riot_get_with_retry(
-                    url=f"https://{match_region_string}.api.riotgames.com/tft/match/v1/matches/{mid}"
-                ).json(),
+            match_data = await riot_get_with_retry(
+                client,
+                url=f"https://{match_region_string}.api.riotgames.com/tft/match/v1/matches/{match_id}",
             )
             parse_composition_data(
-                match_data=match_data, client=client
+                match_data=match_data.json(), client=db_client
             )
             print(f"Uploaded {match_id}")
 
@@ -334,4 +331,9 @@ if __name__ == "__main__":
     _url: str = os.environ.get("supabase_url")
     _key: str = os.environ.get("supabase_key")
     _client: Client = create_client(_url, _key)
-    asyncio.run(get_challenger_match_data("SG2", _client))
+
+    async def _main() -> None:
+        async with httpx.AsyncClient() as http_client:
+            await get_challenger_match_data(http_client, "SG2", _client)
+
+    asyncio.run(_main())
