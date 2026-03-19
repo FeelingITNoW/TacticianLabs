@@ -172,7 +172,9 @@ async def riot_get_with_retry(client: httpx.AsyncClient, url: str, params: dict 
                 delay = min(delay * 2, 120)
             else:
                 raise
+
         except (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError) as exc:
+
             if attempt < max_retries - 1:
                 print(f"Network error, retrying in {delay}s (attempt {attempt + 1}/{max_retries}): {exc}")
                 await asyncio.sleep(delay)
