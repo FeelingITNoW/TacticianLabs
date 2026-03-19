@@ -77,17 +77,17 @@ def parse_composition_data(match_data: dict, client: Client):
     game_datetime = match_data["info"].get("game_datetime")
     game_length = match_data["info"].get("game_length")
 
-    match_rows = [
-        {
-            "set": tft_set_number,
-            "patch": patch_number,
-            "uuid": match_uuid,
-            "datetime": game_datetime,
-            "game_length": game_length,
-        }
-    ]
-    _insert_rows_in_chunks(client, "match", match_rows)
+    # match_rows = [
+    #     {
+    #         "set": tft_set_number,
+    #         "patch": patch_number,
+    #         "uuid": match_uuid,
+    #         "datetime": game_datetime,
+    #         "game_length": game_length,
+    #     }
+    # ]
     
+    prepare_match_table(tft_set_number, patch_number, client, match_uuid, game_datetime, game_length)
     # - match_id (from file name)
     # player id 
     # placement
