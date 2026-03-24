@@ -1,9 +1,31 @@
 // src/routes/index.tsx
 import * as fs from 'node:fs'
+import { createClient } from '@supabase/supabase-js'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 
+import { Database } from '../types/database.types'
+import { Link } from '@tanstack/react-router'
+import { QueryResult, QueryData, QueryError } from '@supabase/supabase-js'
+
 const filePath = 'count.txt'
+
+// Create a single supabase client for interacting with your database
+const supabase = createClient(
+  process.env.supabase_url!,
+  process.env.supabase_key!,
+)
+
+const getTenCompositionsQuery = supabase
+    .from('composition')
+    .select('*')
+    .limit(10);
+
+type Composition = QueryData<typeof getTenCompositionsQuery>;
+
+const { data, error } = await getTenCompositionsQuery;
+if (error) throw error; 
+const Compositions: Composition = data;
 
 async function readCount() {
   return parseInt(
@@ -34,6 +56,8 @@ function Home() {
   const state = Route.useLoaderData()
 
   return (
+    <>
+    <h1>Hello World</h1>
     <button
       type="button"
       onClick={() => {
@@ -44,5 +68,8 @@ function Home() {
     >
       Add 1 to {state}?
     </button>
+    <Link to="/leaderboard">Go to leaderboard</Link>
+    <h3>Compositions: {JSON.stringify(Compositions)}</h3>
+    </>
   )
 }
