@@ -2,7 +2,6 @@ import os
 import time
 from dotenv import load_dotenv
 from supabase import create_client, Client
-
 load_dotenv()
 
 
@@ -39,31 +38,6 @@ def _execute_with_retry(builder, max_retries: int = 6):
             raise
 
 
-def _chunk_rows(rows: list[dict], chunk_size: int) -> list[list[dict]]:
-    return [rows[i:i + chunk_size] for i in range(0, len(rows), chunk_size)]
-
-
-def _insert_rows_in_chunks(client: Client, table_name: str, rows: list[dict], chunk_size: int = 200) -> None:
-    if not rows:
-        return
-
-    for chunk in _chunk_rows(rows, chunk_size):
-        try:
-            _execute_with_retry(client.table(table_name).insert(chunk))
-        except Exception as exc:
-            # If a chunk contains duplicates, retry row-by-row so non-duplicates still insert.
-            if "23505" in str(exc):
-                for row in chunk:
-                    try:
-                        _execute_with_retry(client.table(table_name).insert(row))
-                    except Exception as row_exc:
-                        if "23505" in str(row_exc):
-                            continue
-                        raise
-            else:
-                raise
-
-
 def parse_composition_data(match_data: dict, client: Client):
     # Fields needed for match table:
     # - match_id (from file name)
@@ -94,7 +68,7 @@ def parse_composition_data(match_data: dict, client: Client):
     # level
     participants = match_data["info"]["participants"]
 
-    # Build all composition rows first, then insert in a single batch flow.
+    # Build all composition rows first, then upsert in a single batch flow.
     composition_rows: list[dict] = []
     for participant in participants:
         composition_rows.append(
@@ -105,9 +79,10 @@ def parse_composition_data(match_data: dict, client: Client):
                 "level": participant["level"],
             }
         )
-
-    _insert_rows_in_chunks(client, "composition", composition_rows)
-
+    if composition_rows:
+        _execute_with_retry(
+            client.table("composition").upsert(composition_rows)
+        )
     # Fetch composition ids in one query so traits/units can be batched by FK.
     player_ids = [row["player_id"] for row in composition_rows]
     composition_lookup: dict[str, int] = {}
@@ -120,11 +95,13 @@ def parse_composition_data(match_data: dict, client: Client):
         )
         for row in existing_compositions.data:
             composition_lookup[row["player_id"]] = row["id"]
+    
 
     trait_rows: list[dict] = []
     unit_rows: list[dict] = []
     for participant in participants:
         composition_id = composition_lookup.get(participant["puuid"])
+        
         if composition_id is None:
             continue
 
@@ -151,14 +128,22 @@ def parse_composition_data(match_data: dict, client: Client):
                 }
             )
 
-    _insert_rows_in_chunks(client, "traits", trait_rows)
-    _insert_rows_in_chunks(client, "unit", unit_rows)
+    # Batch upsert traits and units
+    if trait_rows:
+        _execute_with_retry(
+            client.table("traits").upsert(trait_rows)
+        )
+    if unit_rows:
+        _execute_with_retry(
+            client.table("unit").upsert(unit_rows)
+        )
+
 
 def prepare_composition_table(client: Client, composition_dict: dict):
     try:
         response = _execute_with_retry(
             client.table("composition")
-            .insert(composition_dict)
+            .upsert(composition_dict)
         )
     except Exception as e: 
         # PostgreSQL duplicate key error code is 23505, if the composition already exists in the database, we can skip it and move on to the next one
@@ -181,7 +166,7 @@ def prepare_match_table(tft_set_number: int, patch_number: float, client: Client
     try:
         response = _execute_with_retry(
             client.table("match")
-            .insert({"set": tft_set_number, "patch": patch_number, "uuid": match_uuid, "datetime": datetime, "game_length": gamelength})
+            .upsert({"set": tft_set_number, "patch": patch_number, "uuid": match_uuid, "datetime": datetime, "game_length": gamelength})
         )
     except Exception as e: 
         # PostgreSQL duplicate key error code is 23505, if the match already exists in the database, we can skip it and move on to the next one
