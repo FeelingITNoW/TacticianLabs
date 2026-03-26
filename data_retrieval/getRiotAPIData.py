@@ -336,7 +336,7 @@ if __name__ == "__main__":
 
     async def _main() -> None:
         async with httpx.AsyncClient() as http_client:
-            await populate_player_table_with_tiered_data(http_client, region="SG2", db_client=_client)
+            #await populate_player_table_with_tiered_data(http_client, region="SG2", db_client=_client)
             await get_challenger_match_data(http_client, "SG2", _client)
 
     asyncio.run(_main())
