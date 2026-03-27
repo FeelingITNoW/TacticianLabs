@@ -2,7 +2,7 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.node
     container_name: tftdataanalyzer-dev
     ports:
       - "3000:3000"
@@ -19,7 +19,7 @@ services:
   collector:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.node
     container_name: tftdataanalyzer-collector
     profiles:
       - collector
