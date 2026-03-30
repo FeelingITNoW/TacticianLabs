@@ -7,14 +7,14 @@ VALID_RANK_TIERS = [
     "IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM",
     "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER",
 ]
-HIGH_ELO_TIERS = ["MASTER", "GRANDMASTER", "CHALLENGER"]
+HIGH_ELO_TIERS = ["CHALLENGER"]
 LOW_ELO_TIERS = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND"]
 
 RANK_DIVISIONS = ["I", "II", "III", "IV"]
 RIOT_REGIONS = [
     "BR1", "EUN1", "EUW1", "JP1", "KR",
     "LA1", "LA2", "NA1", "OC1",
-    "PH2", "SG2", "TH2", "TW2", "VN2",
+     "SG2", "TW2", "VN2",
 ]
 
 # Platform → routing-region mapping
@@ -32,11 +32,9 @@ RIOT_REGIONS_MAP = {
     # Asia
     "KR": "ASIA",
     "JP1": "ASIA",
-    # Southeast Asia / Oceania — all route via the SEA cluster
+    # Southeast Asia
     "OC1": "SEA",
-    "PH2": "SEA",
     "SG2": "SEA",
-    "TH2": "SEA",
     "TW2": "SEA",
     "VN2": "SEA",
 }
