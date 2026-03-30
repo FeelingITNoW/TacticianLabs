@@ -5,7 +5,7 @@ import sys
 import time
 
 from datetime import date, datetime, timedelta
-from .constants import RIOT_REGIONS, RANK_TIERS, RIOT_REGIONS_MAP
+from .constants import VALID_RANK_TIERS, RIOT_REGIONS, RIOT_REGIONS_MAP, RIOT_VERSIONS_URL
 from .http_client import riot_get, riot_get_with_retry
 from .league_api import get_challengers, get_grandmasters, get_masters
 
@@ -20,10 +20,10 @@ async def validate_match_retrieval_args(regions: list[str], tiers: list[str]) ->
     invalid_regions = [r for r in regions if r not in RIOT_REGIONS]
     if invalid_regions:
         raise ValueError(f"Invalid regions: {invalid_regions}. Valid options are: {RIOT_REGIONS}")
-
-    invalid_tiers = [t for t in tiers if t not in RANK_TIERS]
+    
+    invalid_tiers = [t for t in tiers if t not in VALID_RANK_TIERS]
     if invalid_tiers:
-        raise ValueError(f"Invalid tiers: {invalid_tiers}. Valid options are: {RANK_TIERS}")
+        raise ValueError(f"Invalid tiers: {invalid_tiers}. Valid options are: {VALID_RANK_TIERS}")
 
 
 async def get_match_history_from_last_n_days(
@@ -36,15 +36,14 @@ async def get_match_history_from_last_n_days(
 ) -> list[str]:
     url = f"https://{region}.api.riotgames.com/tft/match/v1/matches/by-puuid/{puuid}/ids?"
     params = {"startTime": startTime, "count": count}
-    response = await riot_get(client, url=url, params=params)
+    response = await riot_get_with_retry(client, url=url, params=params)
     return response.json()
 
 
+# Accepts array of regions and tiers to fetch match IDs for. Returns list of match ids
 async def collect_match_ids(
     client: httpx.AsyncClient, regions: list[str], tiers: list[str]
 ) -> tuple[list[str], str]:
-    """Phase 1: resolve players for the given regions/tiers and return all unique match IDs
-    from the last 24 hours, together with the routing region string needed in Phase 2."""
     await validate_match_retrieval_args(regions, tiers)
 
     players_to_fetch: list[dict] = []
@@ -97,17 +96,3 @@ async def fetch_matches(
     return results
 
 
-def upload_matches(
-    match_data: dict[str, str],
-    s3_client,
-    bucket_name: str,
-) -> None:
-    print(f"Uploading {len(match_data)} matches to {bucket_name}…")
-    for match_id, body in match_data.items():
-        s3_client.put_object(
-            Bucket=bucket_name,
-            Key=f"{match_id}.json",
-            Body=body,
-            ContentType="application/json",
-        )
-        print(f"Uploaded {match_id}")

@@ -1,6 +1,6 @@
-from airflow import DAG
-from airflow.operators.python import PythonOperator
-from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+from airflow import DAG # type: ignore
+from airflow.operators.python import PythonOperator # type: ignore
+from airflow.providers.amazon.aws.hooks.s3 import S3Hook # type: ignore
 from datetime import datetime
 
 def list_b2_buckets():

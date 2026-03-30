@@ -3,10 +3,13 @@ import os
 RIOT_API_KEY = os.getenv("RIOT_API_KEY") or os.getenv("API_KEY")
 RIOT_VERSIONS_URL = "https://ddragon.leagueoflegends.com/api/versions.json"
 SECONDS_IN_A_DAY = 86400
-RANK_TIERS = [
+VALID_RANK_TIERS = [
     "IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM",
     "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER",
 ]
+HIGH_ELO_TIERS = ["MASTER", "GRANDMASTER", "CHALLENGER"]
+LOW_ELO_TIERS = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND"]
+
 RANK_DIVISIONS = ["I", "II", "III", "IV"]
 RIOT_REGIONS = [
     "BR1", "EUN1", "EUW1", "JP1", "KR",
