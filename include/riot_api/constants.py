@@ -32,7 +32,8 @@ RIOT_REGIONS_MAP = {
     # Asia
     "KR": "ASIA",
     "JP1": "ASIA",
-    # Southeast Asia
+    # Southeast Asia / Oceania — all route via the SEA cluster
+    "OC1": "SEA",
     "PH2": "SEA",
     "SG2": "SEA",
     "TH2": "SEA",

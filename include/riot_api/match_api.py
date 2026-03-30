@@ -1,7 +1,6 @@
 import asyncio
 import json
 import httpx
-import sys
 import time
 
 from datetime import date, datetime, timedelta
@@ -67,7 +66,9 @@ async def collect_match_ids(
             client, puuid=puuid, startTime=retrieval_start_time, region=match_region_string
         )
         if "status" in match_list:
-            sys.exit(0)
+            raise RuntimeError(
+                f"Riot API returned an error for PUUID {puuid}: {match_list}"
+            )
         new_match_ids.update(match_list)
 
     print(f"Collected {len(new_match_ids)} unique match IDs.")
