@@ -7,15 +7,13 @@
 
 airflow:
   connections:
-    - conn_id:
-      conn_type:
-      conn_host:
-      conn_schema:
-      conn_login:
-      conn_password:
-      conn_port:
+    - conn_id: backblaze_b2
+      conn_type: aws
+      conn_login: 006798c1494eb300000000002
+      conn_password: K006aP3ujfAykzqCWh5iS/zary71vvc
       conn_extra:
-        example_extra_field: example-value
+        endpoint_url: https://s3.ca-east-006.backblazeb2.com
+        region_name: ca-east-006
   pools:
     - pool_name:
       pool_slot:

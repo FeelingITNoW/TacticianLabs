@@ -1,13 +1,15 @@
 .DS_Store
 .env
 files/match/
-data_retrieval/__pycache__/*
+**/__pycache__/
+*.pyc
 .venv/
 .venv-1/
 node_modules/
 .conda
-terramform.tfvars
+terraform.tfvars
 terraform.tfstate
+airflow_settings.yaml
 terraform.tfstate.backup
 tfplan
 .terraform.lock.hcl
