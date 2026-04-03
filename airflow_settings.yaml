@@ -9,8 +9,8 @@ airflow:
   connections:
     - conn_id: backblaze_b2
       conn_type: aws
-      conn_login: 006798c1494eb300000000002
-      conn_password: K006aP3ujfAykzqCWh5iS/zary71vvc
+      conn_login: ${B2_APPLICATION_KEY_ID}
+      conn_password: ${B2_APPLICATION_KEY}
       conn_extra:
         endpoint_url: https://s3.ca-east-006.backblazeb2.com
         region_name: ca-east-006
@@ -19,5 +19,8 @@ airflow:
       pool_slot:
       pool_description:
   variables:
-    - variable_name:
-      variable_value:
+    - variable_name: supabase_url
+      variable_value: ${supabase_url}
+    - variable_name: supabase_key
+      variable_value: ${supabase_key}
+
