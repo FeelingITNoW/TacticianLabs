@@ -1,13 +1,14 @@
 import asyncio
+import json
 import httpx
 
 from airflow.sdk import dag, task # type: ignore
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook # type: ignore
 from datetime import datetime
+from db.transformData import parse_match_data
 from riot_api.match_api import collect_match_ids, fetch_matches
 from riot_api.constants import RIOT_REGIONS, HIGH_ELO_TIERS
 from b2_bucket_api.upload_to_bucket import upload_matches as upload_matches_to_b2
-
 
 @dag(
     dag_id='upsert_json_to_b2_bucket',
@@ -58,9 +59,55 @@ def upsert_json_to_b2_bucket():
                 )
         asyncio.run(_run())
 
+    @task
+    def upsert_players_task() -> None:
+        import os
+        from supabase import create_client
+        from db.getRiotAPIData import populate_player_table_with_tiered_data
+
+        supabase_client = create_client(
+            os.environ["supabase_url"],
+            os.environ["supabase_key"],
+        )
+
+        async def _run() -> None:
+            async with httpx.AsyncClient() as async_client:
+                for region in RIOT_REGIONS:
+                    await populate_player_table_with_tiered_data(
+                        client=async_client,
+                        region=region,
+                        db_client=supabase_client,
+                    )
+
+        asyncio.run(_run())
+
+    @task
+    def upsert_to_db_task(matches_data: dict) -> None:
+        import os
+        from supabase import create_client
+
+        async def _get_latest_version() -> str:
+            async with httpx.AsyncClient() as async_client:
+                riot_versions = (await async_client.get("https://ddragon.leagueoflegends.com/api/versions.json")).json()
+                return riot_versions[0]
+
+        latest_version = asyncio.run(_get_latest_version())
+
+        supabase_client = create_client(
+            os.environ["supabase_url"],
+            os.environ["supabase_key"],
+        )
+
+        for match_id in matches_data.keys():
+            match_data = json.loads(matches_data[match_id])
+            print(f"Processing match_id: {match_id}")
+            parse_match_data(match_data=match_data, client=supabase_client, latest_version=latest_version)
+
     collection_results = collect_match_ids_task.expand(region=RIOT_REGIONS)
     fetched = fetch_matches_task.expand(collection_result=collection_results)
-    upload_to_b2_task.expand(match_data=fetched)
-
+    uploaded = upload_to_b2_task.expand(match_data=fetched)
+    players_done = upsert_players_task()
+    upsert_db = upsert_to_db_task.expand(matches_data=fetched)
+    [uploaded, players_done] >> upsert_db
 
 upsert_json_to_b2_bucket()

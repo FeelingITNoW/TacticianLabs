@@ -19,5 +19,8 @@ airflow:
       pool_slot:
       pool_description:
   variables:
-    - variable_name:
-      variable_value:
+    - variable_name: supabase_url
+      variable_value: https://wxxbrfhobkdlfkjxnqsy.supabase.co
+    - variable_name: supabase_key
+      variable_value: sb_secret_rLAeFgF9swptoVeZWdpXjQ_BJdYL-cV
+

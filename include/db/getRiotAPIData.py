@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 from supabase import create_client, Client
-from transformData import parse_composition_data, prepare_composition_table, prepare_match_table
 
 # Load .env from repository root no matter where this script is run from.
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -16,7 +15,6 @@ load_dotenv(dotenv_path=REPO_ROOT / ".env")
 
 RIOT_API_KEY = os.getenv("RIOT_API_KEY") or os.getenv("API_KEY")
 SECONDS_IN_A_DAY = 86400
-LOCAL_STORAGE_DIRECTORY = "../files/match"
 RANK_TIERS = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND"]
 RANK_DIVISIONS = ["I", "II", "III", "IV"]      
 RIOT_REGIONS = [
@@ -62,19 +60,12 @@ RIOT_REGIONS_MAP = {
     "VN2": "SEA",
 }
 
-
-def riot_match_uuid(match_id: str) -> str:
-    """Create a deterministic UUID from Riot's match id string."""
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"riot:tft:match:{match_id}"))
-
-
 def _ensure_riot_api_key() -> None:
     if RIOT_API_KEY:
         return
     raise RuntimeError(
         "Riot API key not found. Set RIOT_API_KEY (preferred) or API_KEY in .env"
     )
-
 
 async def riot_get(client: httpx.AsyncClient, url: str, params: dict | None = None) -> httpx.Response:
     _ensure_riot_api_key()
@@ -216,20 +207,35 @@ async def prepare_player_data(client: httpx.AsyncClient, puuid: str, region: str
     mapped_region = api_region_map.get(region)
     account_data = await get_account_name_from_puuid(client, puuid=puuid, region=mapped_region)
     league_data = await get_player_league_data(client, puuid=puuid, region=region)
-    player_dict = dict()
-    player_dict["uuid"] = puuid
-    player_dict["tier"] = league_data[0]["tier"] if league_data else "UNRANKED"
-    player_dict["division"] = league_data[0]["rank"] if league_data else "UNRANKED"
-    player_dict["LP"] = league_data[0]["leaguePoints"] if league_data else 0
+    player_ranked_stats_dict = dict()
+    player_dict = dict() 
+    player_ranked_stats_dict["puuid"] = puuid
+    player_ranked_stats_dict["tier"] = league_data[0]["tier"] if league_data else "UNRANKED"
+    player_ranked_stats_dict["rank"] = league_data[0]["rank"] if league_data else "UNRANKED"
+    player_ranked_stats_dict["league_points"] = league_data[0]["leaguePoints"] if league_data else 0
+    player_ranked_stats_dict["wins"] = league_data[0]["wins"] if league_data else 0
+    player_ranked_stats_dict["losses"] = league_data[0]["losses"] if league_data else 0
+    player_ranked_stats_dict["hot_streak"] = league_data[0]["hotStreak"] if league_data else False
+    
+    player_dict["puuid"] = puuid
+    player_dict["game_name"] = account_data["gameName"] + "#" + account_data["tagLine"]
     player_dict["region"] = region
-    player_dict["player_name"] = account_data["gameName"] + "#" + account_data["tagLine"]
+    player_dict["tag_line"] = account_data["tagLine"]
 
     try:
-        response = (
-            db_client.table("player")
-            .insert(player_dict)
+        player_response = (
+            db_client.table("players")
+            .upsert(player_dict)
             .execute()
         )
+
+        player_ranked_stats_response = (
+            db_client.table("player_ranked_stats")
+            .upsert(player_ranked_stats_dict)
+            .execute()
+        )
+        
+
     except Exception as e: 
         # PostgreSQL duplicate key error code is 23505, if the player already exists in the database, we can skip it and move on to the next one
         if "23505" in str(e):   
@@ -237,7 +243,7 @@ async def prepare_player_data(client: httpx.AsyncClient, puuid: str, region: str
             pass    
         else:
             raise
-    return player_dict 
+    return player_ranked_stats_dict 
 
 
 async def get_account_name_from_puuid(client: httpx.AsyncClient, puuid: str, region: str):
