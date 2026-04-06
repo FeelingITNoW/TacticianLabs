@@ -4,18 +4,35 @@ RIOT_API_KEY = os.getenv("RIOT_API_KEY") or os.getenv("API_KEY")
 RIOT_VERSIONS_URL = "https://ddragon.leagueoflegends.com/api/versions.json"
 SECONDS_IN_A_DAY = 86400
 VALID_RANK_TIERS = [
-    "IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM",
-    "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER",
+    "IRON",
+    "BRONZE",
+    "SILVER",
+    "GOLD",
+    "PLATINUM",
+    "EMERALD",
+    "DIAMOND",
+    "MASTER",
+    "GRANDMASTER",
+    "CHALLENGER",
 ]
 HIGH_ELO_TIERS = ["CHALLENGER"]
 LOW_ELO_TIERS = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND"]
 TFT_RANKED_QUEUE_ID = 1100
 RANK_DIVISIONS = ["I", "II", "III", "IV"]
-# RIOT_REGIONS = [
-#     "BR1", "EUN1", "EUW1", "JP1", "KR",
-#     "LA1", "LA2", "NA1", "OC1",
-#      "SG2", "TW2", "VN2",
-# ]
+RIOT_REGIONS = [
+    "BR1",
+    "EUN1",
+    "EUW1",
+    "JP1",
+    "KR",
+    "LA1",
+    "LA2",
+    "NA1",
+    "OC1",
+    "SG2",
+    "TW2",
+    "VN2",
+]
 RIOT_REGIONS = ["SG2"]
 # Platform → routing-region mapping
 RIOT_REGIONS_MAP = {

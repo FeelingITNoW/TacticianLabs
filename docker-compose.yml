@@ -15,16 +15,3 @@ services:
     command: npm run dev -- --host 0.0.0.0 --port 3000
     stdin_open: true
     tty: true
-
-  collector:
-    build:
-      context: .
-      dockerfile: Dockerfile.node
-    container_name: tftdataanalyzer-collector
-    profiles:
-      - collector
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: python3 data_retrieval/getRawData.py
