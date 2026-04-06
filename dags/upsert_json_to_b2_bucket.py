@@ -6,7 +6,7 @@ import httpx
 from airflow.sdk import dag, task  # type: ignore
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook  # type: ignore
 from datetime import datetime
-from db.transformData import parse_match_data
+from db.parse_match_data import parse_match_data
 from riot_api.match_api import collect_match_ids, fetch_matches
 from riot_api.constants import RIOT_REGIONS, HIGH_ELO_TIERS
 from b2_bucket_api.upload_to_bucket import upload_matches as upload_matches_to_b2

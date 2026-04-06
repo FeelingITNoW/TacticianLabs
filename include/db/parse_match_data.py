@@ -84,7 +84,8 @@ def parse_match_data(
     for participant in participants:
         match_id = match_uuid
         puuid = participant["puuid"]
-
+        participant_traits = []
+        participant_units = []
         for trait in participant["traits"]:
             trait_rows.append(
                 {
@@ -97,6 +98,7 @@ def parse_match_data(
                     "tier_total": trait["tier_total"],
                 }
             )
+            participant_traits.append(trait["name"])
 
         for unit in participant["units"]:
             unit_rows.append(
@@ -109,12 +111,12 @@ def parse_match_data(
                     "rarity": unit["rarity"],
                 }
             )
-
+            participant_units.append(unit["character_id"])
         # Generate vector embeddings from traits and units for each participant and add to participant_rows
         vector_embedding = get_embedding(
             api_key=os.getenv("GEMINI_API_KEY"),
-            participant_units=participant["units"],
-            participant_traits=participant["traits"],
+            participant_units=participant_units,
+            participant_traits=participant_traits,
         )
 
         participant_rows.append(
@@ -126,7 +128,7 @@ def parse_match_data(
                 "gold_left": participant["gold_left"],
                 "last_round": participant["last_round"],
                 "total_damage_to_players": participant["total_damage_to_players"],
-                "vector_embedding": vector_embedding,
+                "embedding": vector_embedding,
             }
         )
     # Deduplicate within batch to avoid ON CONFLICT affecting the same row twice

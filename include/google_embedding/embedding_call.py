@@ -1,5 +1,7 @@
 import os
+
 from google import genai
+from google.genai import types
 
 api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
@@ -15,9 +17,11 @@ def get_embedding(api_key: str, participant_units: list, participant_traits: lis
     composition_str = units_str + " | " + traits_str
     prepped_string = prepare_query_and_string(composition_str)
     response = client.models.embed_content(
-        model="gemini-embedding-001", contents=prepped_string
+        model="gemini-embedding-001",
+        contents=prepped_string,
+        config=types.EmbedContentConfig(output_dimensionality=768),
     )
-    return response.embedding
+    return response.embeddings[0].values
 
 
 # We are using the clustering task
