@@ -84,7 +84,8 @@ def parse_match_data(
     for participant in participants:
         match_id = match_uuid
         puuid = participant["puuid"]
-
+        participant_traits = []
+        participant_units = []
         for trait in participant["traits"]:
             trait_rows.append(
                 {
@@ -97,6 +98,7 @@ def parse_match_data(
                     "tier_total": trait["tier_total"],
                 }
             )
+            participant_traits.append(trait["name"])
 
         for unit in participant["units"]:
             unit_rows.append(
@@ -109,12 +111,12 @@ def parse_match_data(
                     "rarity": unit["rarity"],
                 }
             )
-
+            participant_units.append(unit["character_id"])
         # Generate vector embeddings from traits and units for each participant and add to participant_rows
         vector_embedding = get_embedding(
             api_key=os.getenv("GEMINI_API_KEY"),
-            participant_units=participant["units"],
-            participant_traits=participant["traits"],
+            participant_units=participant_units,
+            participant_traits=participant_traits,
         )
 
         participant_rows.append(
@@ -126,7 +128,7 @@ def parse_match_data(
                 "gold_left": participant["gold_left"],
                 "last_round": participant["last_round"],
                 "total_damage_to_players": participant["total_damage_to_players"],
-                "vector_embedding": vector_embedding,
+                "embedding": vector_embedding,
             }
         )
     # Deduplicate within batch to avoid ON CONFLICT affecting the same row twice
@@ -140,7 +142,7 @@ def parse_match_data(
         seen_units[(row["match_id"], row["puuid"], row["character_id"])] = row
     unit_rows = list(seen_units.values())
 
-    prepare_match_table(
+    match_table_entry = prepare_match_table(
         tft_set_number, patch_number, client, match_uuid, game_datetime, game_length
     )
     if participant_rows:
@@ -152,6 +154,13 @@ def parse_match_data(
     if unit_rows:
         _execute_with_retry(client.table("units").insert(unit_rows))
 
+    return {
+        "match_table_entry": match_table_entry,
+        "participant_rows": participant_rows,
+        "trait_rows": trait_rows,
+        "unit_rows": unit_rows,
+    }
+
 
 def prepare_match_table(
     tft_set_number: int,
@@ -161,18 +170,15 @@ def prepare_match_table(
     datetime: int,
     gamelength: float,
 ):
+    match_entry = {
+        "tft_set_number": tft_set_number,
+        "game_version": patch_number,
+        "match_id": match_uuid,
+        "game_datetime": datetime,
+        "game_length": gamelength,
+    }
     try:
-        _execute_with_retry(
-            client.table("matches").upsert(
-                {
-                    "tft_set_number": tft_set_number,
-                    "game_version": patch_number,
-                    "match_id": match_uuid,
-                    "game_datetime": datetime,
-                    "game_length": gamelength,
-                }
-            )
-        )
+        _execute_with_retry(client.table("matches").upsert(match_entry))
     except Exception as e:
         # PostgreSQL duplicate key error code is 23505, if the match already exists in the database, we can skip it and move on to the next one
         if "23505" in str(e):
@@ -181,7 +187,7 @@ def prepare_match_table(
         else:
             raise
 
-    return
+    return match_entry
 
 
 if __name__ == "__main__":

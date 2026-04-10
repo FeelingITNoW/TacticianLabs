@@ -33,7 +33,7 @@ RIOT_REGIONS = [
     "TW2",
     "VN2",
 ]
-RIOT_REGIONS = ["SG2"]
+# RIOT_REGIONS = ["SG2"]
 # Platform → routing-region mapping
 RIOT_REGIONS_MAP = {
     # Americas

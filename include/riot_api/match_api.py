@@ -4,8 +4,12 @@ import httpx
 import time
 
 from datetime import date, datetime, timedelta
-from .constants import VALID_RANK_TIERS, RIOT_REGIONS, RIOT_REGIONS_MAP, RIOT_VERSIONS_URL
-from .http_client import riot_get, riot_get_with_retry
+from .constants import (
+    VALID_RANK_TIERS,
+    RIOT_REGIONS,
+    RIOT_REGIONS_MAP,
+)
+from .http_client import riot_get_with_retry
 from .league_api import get_challengers, get_grandmasters, get_masters
 
 
@@ -18,11 +22,15 @@ def get_unix_timestamp_from_n_days_ago(n: int) -> int:
 async def validate_match_retrieval_args(regions: list[str], tiers: list[str]) -> None:
     invalid_regions = [r for r in regions if r not in RIOT_REGIONS]
     if invalid_regions:
-        raise ValueError(f"Invalid regions: {invalid_regions}. Valid options are: {RIOT_REGIONS}")
-    
+        raise ValueError(
+            f"Invalid regions: {invalid_regions}. Valid options are: {RIOT_REGIONS}"
+        )
+
     invalid_tiers = [t for t in tiers if t not in VALID_RANK_TIERS]
     if invalid_tiers:
-        raise ValueError(f"Invalid tiers: {invalid_tiers}. Valid options are: {VALID_RANK_TIERS}")
+        raise ValueError(
+            f"Invalid tiers: {invalid_tiers}. Valid options are: {VALID_RANK_TIERS}"
+        )
 
 
 async def get_match_history_from_last_n_days(
@@ -33,7 +41,9 @@ async def get_match_history_from_last_n_days(
     start_index: int = 0,
     count: int = 100,
 ) -> list[str]:
-    url = f"https://{region}.api.riotgames.com/tft/match/v1/matches/by-puuid/{puuid}/ids?"
+    url = (
+        f"https://{region}.api.riotgames.com/tft/match/v1/matches/by-puuid/{puuid}/ids?"
+    )
     params = {"startTime": startTime, "count": count}
     response = await riot_get_with_retry(client, url=url, params=params)
     return response.json()
@@ -45,42 +55,56 @@ async def collect_match_ids(
 ) -> tuple[list[str], str]:
     await validate_match_retrieval_args(regions, tiers)
 
-    players_to_fetch: list[dict] = []
-    match_region_string = ""
+    # Group puuids by their routing region so each player is fetched from the correct endpoint
+    players_by_routing: dict[str, list[str]] = {}
     for region in regions:
-        match_region_string = RIOT_REGIONS_MAP[region]
+        routing = RIOT_REGIONS_MAP[region]
+        if routing not in players_by_routing:
+            players_by_routing[routing] = []
         if "CHALLENGER" in tiers:
-            players_to_fetch.extend(await get_challengers(client, region))
+            players_by_routing[routing].extend(await get_challengers(client, region))
         if "GRANDMASTER" in tiers:
-            players_to_fetch.extend(await get_grandmasters(client, region))
+            players_by_routing[routing].extend(await get_grandmasters(client, region))
         if "MASTER" in tiers:
-            players_to_fetch.extend(await get_masters(client, region))
-        print(f"Region {region} - fetched {len(players_to_fetch)} total players from tiers {tiers}")
+            players_by_routing[routing].extend(await get_masters(client, region))
+        print(
+            f"Region {region} (routing: {routing}) - {len(players_by_routing[routing])} players from tiers {tiers}"
+        )
+
+    total_players = sum(len(v) for v in players_by_routing.values())
+    print(f"Total unique players to fetch matches for: {total_players}")
 
     new_match_ids: set[str] = set()
-    for player in players_to_fetch:
-        puuid = player["puuid"]
-        print(f"Fetching match history for player (PUUID: {puuid}) in region {match_region_string}...")
-        retrieval_start_time = get_unix_timestamp_from_n_days_ago(1)
-        match_list = await get_match_history_from_last_n_days(
-            client, puuid=puuid, startTime=retrieval_start_time, region=match_region_string
-        )
-        if "status" in match_list:
-            raise RuntimeError(
-                f"Riot API returned an error for PUUID {puuid}: {match_list}"
+    last_routing = ""
+    for routing, puuids in players_by_routing.items():
+        last_routing = routing
+        for puuid in puuids:
+            print(
+                f"Fetching match history for player (PUUID: {puuid}) in region {routing}..."
             )
-        new_match_ids.update(match_list)
+            retrieval_start_time = get_unix_timestamp_from_n_days_ago(1)
+            match_list = await get_match_history_from_last_n_days(
+                client,
+                puuid=puuid,
+                startTime=retrieval_start_time,
+                region=routing,
+            )
+            if "status" in match_list:
+                raise RuntimeError(
+                    f"Riot API returned an error for PUUID {puuid}: {match_list}"
+                )
+            new_match_ids.update(match_list)
 
     print(f"Collected {len(new_match_ids)} unique match IDs.")
-    return list(new_match_ids), match_region_string
+    return list(new_match_ids), last_routing
 
 
-async def fetch_matches(
+async def collect_matches(
     client: httpx.AsyncClient,
     match_ids: list[str],
     match_region: str,
 ) -> dict[str, str]:
-    print(f"Fetching {len(match_ids)} matches…")
+    print(f"Collecting {len(match_ids)} matches…")
     semaphore = asyncio.Semaphore(2)
     results: dict[str, str] = {}
 
@@ -91,9 +115,7 @@ async def fetch_matches(
                 url=f"https://{match_region}.api.riotgames.com/tft/match/v1/matches/{match_id}",
             )
             results[match_id] = json.dumps(response.json())
-            print(f"Fetched {match_id}")
+            print(f"Collected match {match_id}")
 
     await asyncio.gather(*[_fetch(mid) for mid in match_ids])
     return results
-
-

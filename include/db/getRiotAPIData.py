@@ -8,7 +8,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
-from db.transformData import parse_match_data
+from db.parse_match_data import parse_match_data
 
 # Load .env from repository root no matter where this script is run from.
 REPO_ROOT = Path(__file__).resolve().parents[1]
