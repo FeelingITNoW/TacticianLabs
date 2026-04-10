@@ -7,13 +7,13 @@ from airflow.sdk import dag, task  # type: ignore
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook  # type: ignore
 from datetime import datetime
 from db.parse_match_data import parse_match_data
-from riot_api.match_api import collect_match_ids, fetch_matches
+from riot_api.match_api import collect_match_ids, collect_matches
 from riot_api.constants import RIOT_REGIONS, HIGH_ELO_TIERS
 from b2_bucket_api.upload_to_bucket import upload_matches as upload_matches_to_b2
 
 
 @dag(
-    dag_id="upsert_json_to_b2_bucket",
+    dag_id="upsert_json_to_bucket_and_db",
     schedule="@daily",
     start_date=datetime(2026, 1, 1),
     catchup=False,
@@ -36,10 +36,10 @@ def upsert_json_to_b2_bucket():
         return {"match_ids": match_ids, "match_region": match_region}
 
     @task(max_active_tis_per_dagrun=1)
-    def fetch_matches_task(collection_result: dict) -> dict:
+    def collect_matches_task(collection_result: dict) -> dict:
         async def _run():
             async with httpx.AsyncClient() as async_client:
-                return await fetch_matches(
+                return await collect_matches(
                     client=async_client,
                     match_ids=collection_result["match_ids"],
                     match_region=collection_result["match_region"],
@@ -127,10 +127,12 @@ def upsert_json_to_b2_bucket():
             )
 
     collection_results = collect_match_ids_task.expand(region=RIOT_REGIONS)
-    fetched = fetch_matches_task.expand(collection_result=collection_results)
-    uploaded = upload_to_b2_task.expand(match_data=fetched)
+    collected_matches = collect_matches_task.expand(
+        collection_result=collection_results
+    )
+    uploaded = upload_to_b2_task.expand(match_data=collected_matches)
     players_done = upsert_players_task()
-    upsert_db = upsert_to_db_task.expand(matches_data=fetched)
+    upsert_db = upsert_to_db_task.expand(matches_data=collected_matches)
     [uploaded, players_done] >> upsert_db
 
 

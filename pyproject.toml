@@ -15,6 +15,12 @@ dev = [
     "pandas>=3.0.2",
     "psycopg2>=2.9.11",
     "pytest>=9.0.2",
+    "pytest-asyncio>=0.23",
     "python-dotenv>=1.2.2",
     "supabase>=2.28.3",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["include", "dags"]
+testpaths = ["tests"]

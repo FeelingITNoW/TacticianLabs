@@ -142,7 +142,7 @@ def parse_match_data(
         seen_units[(row["match_id"], row["puuid"], row["character_id"])] = row
     unit_rows = list(seen_units.values())
 
-    prepare_match_table(
+    match_table_entry = prepare_match_table(
         tft_set_number, patch_number, client, match_uuid, game_datetime, game_length
     )
     if participant_rows:
@@ -154,6 +154,13 @@ def parse_match_data(
     if unit_rows:
         _execute_with_retry(client.table("units").insert(unit_rows))
 
+    return {
+        "match_table_entry": match_table_entry,
+        "participant_rows": participant_rows,
+        "trait_rows": trait_rows,
+        "unit_rows": unit_rows,
+    }
+
 
 def prepare_match_table(
     tft_set_number: int,
@@ -163,18 +170,15 @@ def prepare_match_table(
     datetime: int,
     gamelength: float,
 ):
+    match_entry = {
+        "tft_set_number": tft_set_number,
+        "game_version": patch_number,
+        "match_id": match_uuid,
+        "game_datetime": datetime,
+        "game_length": gamelength,
+    }
     try:
-        _execute_with_retry(
-            client.table("matches").upsert(
-                {
-                    "tft_set_number": tft_set_number,
-                    "game_version": patch_number,
-                    "match_id": match_uuid,
-                    "game_datetime": datetime,
-                    "game_length": gamelength,
-                }
-            )
-        )
+        _execute_with_retry(client.table("matches").upsert(match_entry))
     except Exception as e:
         # PostgreSQL duplicate key error code is 23505, if the match already exists in the database, we can skip it and move on to the next one
         if "23505" in str(e):
@@ -183,7 +187,7 @@ def prepare_match_table(
         else:
             raise
 
-    return
+    return match_entry
 
 
 if __name__ == "__main__":

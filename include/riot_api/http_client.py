@@ -12,6 +12,8 @@ def _ensure_riot_api_key() -> None:
     )
 
 
+# TODO: rename this to something better too much overlap with riot_get_with_retry and it's not just a simple get anymore
+# TODO: refactor: no reason to use this over riot_get_with_retry in league_api
 async def riot_get(
     client: httpx.AsyncClient, url: str, params: dict | None = None
 ) -> httpx.Response:
@@ -46,14 +48,18 @@ async def riot_get_with_retry(
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 429:
                 retry_after = int(exc.response.headers.get("Retry-After", delay))
-                print(f"Rate limited. Retrying after {retry_after}s (attempt {attempt + 1}/{max_retries})")
+                print(
+                    f"Rate limited. Retrying after {retry_after}s (attempt {attempt + 1}/{max_retries})"
+                )
                 await asyncio.sleep(retry_after)
                 delay = min(delay * 2, 120)
             else:
                 raise
         except (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError) as exc:
             if attempt < max_retries - 1:
-                print(f"Network error, retrying in {delay}s (attempt {attempt + 1}/{max_retries}): {exc}")
+                print(
+                    f"Network error, retrying in {delay}s (attempt {attempt + 1}/{max_retries}): {exc}"
+                )
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 120)
             else:

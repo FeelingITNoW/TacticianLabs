@@ -5,7 +5,7 @@ from .constants import (
     RANK_DIVISIONS,
     RIOT_REGIONS,
     RIOT_REGIONS_MAP,
-    HIGH_ELO_TIERS
+    HIGH_ELO_TIERS,
 )
 from .http_client import riot_get, riot_get_with_retry
 from .league_api import get_challengers, get_grandmasters, get_masters
@@ -14,7 +14,7 @@ from .match_api import (
     validate_match_retrieval_args,
     get_match_history_from_last_n_days,
     collect_match_ids,
-    fetch_matches,
+    collect_matches,
 )
 
 __all__ = [
@@ -34,5 +34,5 @@ __all__ = [
     "validate_match_retrieval_args",
     "get_match_history_from_last_n_days",
     "collect_match_ids",
-    "fetch_matches",
+    "collect_matches",
 ]

@@ -14,5 +14,5 @@ from .match_api import (  # noqa: F401
     validate_match_retrieval_args,
     get_match_history_from_last_n_days,
     collect_match_ids,
-    fetch_matches,
+    collect_matches,
 )
