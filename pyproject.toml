@@ -22,5 +22,5 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-pythonpath = ["include", "dags"]
+pythonpath = [".", "include", "dags"]
 testpaths = ["tests"]
