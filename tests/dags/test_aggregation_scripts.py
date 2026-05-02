@@ -6,10 +6,15 @@ from data_aggregation.data_aggregation import (
     calculate_trait_win_rate,
     calculate_trait_top4_rate,
     calculate_trait_average_placement,
+    calculate_item_win_rate,
+    calculate_item_top4_rate,
+    calculate_item_average_placement,
     get_all_unit_db_entries,
     get_all_active_trait_db_entries,
+    get_all_units_with_item,
     get_all_participants_with_unit,
     get_all_participants_with_trait,
+    get_all_participants_with_item,
 )
 
 
@@ -214,6 +219,82 @@ class TestQueryScripts:
         assert 1 <= result <= 8
 
         db_entries = get_all_participants_with_trait(local_supabase, "TFT16_Brawler")
+        expected = (
+            sum(entry["placement"] for entry in db_entries) / len(db_entries)
+            if db_entries
+            else 0
+        )
+
+        assert result == expected
+
+    def test_get_all_units_with_item(self, local_supabase):
+        result = get_all_units_with_item(local_supabase, "TFT_Item_FrozenHeart")
+
+        assert len(result) > 0
+        assert all("TFT_Item_FrozenHeart" in entry["item_names"] for entry in result)
+
+        direct_query_result = (
+            local_supabase.table("units")
+            .select("character_id", count="exact")
+            .contains("item_names", ["TFT_Item_FrozenHeart"])
+            .execute()
+        )
+        assert len(result) == direct_query_result.count
+
+    def test_get_all_participants_with_item(self, local_supabase):
+        unit_entries = get_all_units_with_item(local_supabase, "TFT_Item_FrozenHeart")
+        result = get_all_participants_with_item(local_supabase, "TFT_Item_FrozenHeart")
+
+        assert len(result) > 0
+
+        unit_pairs = {(entry["match_id"], entry["puuid"]) for entry in unit_entries}
+        assert all(
+            (entry["match_id"], entry["puuid"]) in unit_pairs for entry in result
+        )
+
+        # Cannot assert this because some participants can have multiple of the same items built
+        # assert len(result) == len(unit_entries)
+
+    def test_calculate_item_win_rate(self, local_supabase):
+        result = calculate_item_win_rate(local_supabase, "TFT_Item_FrozenHeart")
+
+        assert result is not None
+        assert 0 <= result <= 1
+
+        db_entries = get_all_participants_with_item(
+            local_supabase, "TFT_Item_FrozenHeart"
+        )
+        match_ids = {entry["match_id"] for entry in db_entries}
+        entries_won = [entry for entry in db_entries if entry["placement"] == 1]
+        expected = len(entries_won) / len(match_ids) if match_ids else 0
+
+        assert result == expected
+
+    def test_calculate_item_top4_rate(self, local_supabase):
+        result = calculate_item_top4_rate(local_supabase, "TFT_Item_FrozenHeart")
+
+        assert result is not None
+        assert 0 <= result <= 1
+
+        db_entries = get_all_participants_with_item(
+            local_supabase, "TFT_Item_FrozenHeart"
+        )
+        entries_top4 = [entry for entry in db_entries if entry["placement"] <= 4]
+        expected = len(entries_top4) / len(db_entries) if db_entries else 0
+
+        assert result == expected
+
+    def test_calculate_item_average_placement(self, local_supabase):
+        result = calculate_item_average_placement(
+            local_supabase, "TFT_Item_FrozenHeart"
+        )
+
+        assert result is not None
+        assert 1 <= result <= 8
+
+        db_entries = get_all_participants_with_item(
+            local_supabase, "TFT_Item_FrozenHeart"
+        )
         expected = (
             sum(entry["placement"] for entry in db_entries) / len(db_entries)
             if db_entries
