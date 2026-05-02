@@ -1,5 +1,5 @@
 from airflow import DAG  # type: ignore
-from airflow.operators.python import PythonOperator  # type: ignore
+from airflow.providers.standard.operators.python import PythonOperator  # type: ignore
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook  # type: ignore
 from datetime import datetime
 

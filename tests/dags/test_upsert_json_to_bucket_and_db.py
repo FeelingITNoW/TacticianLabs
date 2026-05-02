@@ -12,21 +12,12 @@ TestParseMatchData        – db.parse_match_data.parse_match_data
 TestPopulatePlayerTable   – db.getRiotAPIData.populate_player_table_with_tiered_data
 """
 
-import json
 import pytest
-import asyncio
 import httpx
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from airflow.models import DagBag  # type: ignore
-from google import genai
-from airflow.sdk import dag, task  # type: ignore
-from airflow.providers.amazon.aws.hooks.s3 import S3Hook  # type: ignore
-from datetime import datetime
-from db.parse_match_data import parse_match_data
-from riot_api.match_api import collect_match_ids, collect_matches
-from riot_api.constants import RIOT_REGIONS, HIGH_ELO_TIERS
-from b2_bucket_api.upload_to_bucket import upload_matches as upload_matches_to_b2
+from riot_api.match_api import collect_match_ids
 from tests.dags.test_constants import MATCH_DATA_RANKED_GAME, MATCH_DATA_UNRANKED_GAME
 
 
