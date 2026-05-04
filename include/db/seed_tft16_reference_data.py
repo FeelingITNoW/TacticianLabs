@@ -77,7 +77,7 @@ def seed_reference_data() -> None:
     supabase.table("champions").upsert(champions).execute()
 
     print(f"Seeding {len(traits)} TFT16 traits...")
-    supabase.table("traits").upsert(traits).execute()
+    supabase.table("traits_reference").upsert(traits).execute()
 
     print(f"Seeding {len(items)} items (non-consumable)...")
     supabase.table("items").upsert(items).execute()
