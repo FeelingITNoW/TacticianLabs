@@ -24,3 +24,9 @@ dev = [
 asyncio_mode = "auto"
 pythonpath = [".", "include", "dags"]
 testpaths = ["tests"]
+markers = [
+    "integration: hits the live Riot API, needs a real RIOT_API_KEY",
+]
+
+[tool.ruff]
+extend-exclude = [".conda", ".venv-1", "logs", "plugins"]

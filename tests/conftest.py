@@ -1,5 +1,4 @@
 import os
-import httpx
 import pytest
 from supabase import create_client, Client
 
