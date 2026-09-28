@@ -8,7 +8,12 @@ from .constants import (
     HIGH_ELO_TIERS,
 )
 from .http_client import riot_get, riot_get_with_retry
-from .league_api import get_challengers, get_grandmasters, get_masters
+from .league_api import (
+    get_league_entries,
+    get_challengers,
+    get_grandmasters,
+    get_masters,
+)
 from .match_api import (
     get_unix_timestamp_from_n_days_ago,
     validate_match_retrieval_args,
@@ -27,6 +32,7 @@ __all__ = [
     "RIOT_REGIONS_MAP",
     "riot_get",
     "riot_get_with_retry",
+    "get_league_entries",
     "get_challengers",
     "get_grandmasters",
     "get_masters",

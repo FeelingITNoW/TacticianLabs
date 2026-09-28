@@ -1,0 +1,19 @@
+# Cloud Run Job image for the TFT match ingest (include/jobs/ingest_matches.py).
+# Built by cloudbuild.yaml; the Airflow image is the separate Dockerfile.
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/include
+
+WORKDIR /app
+
+COPY requirements-jobs.txt .
+RUN pip install --no-cache-dir -r requirements-jobs.txt
+
+COPY include/ include/
+
+RUN useradd --create-home --uid 10001 app
+USER app
+
+CMD ["python", "-m", "jobs.ingest_matches"]

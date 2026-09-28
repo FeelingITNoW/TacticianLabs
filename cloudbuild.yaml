@@ -1,0 +1,43 @@
+# Builds the ingest job image and points the Cloud Run Job at it.
+# Run by the Developer Connect trigger defined in infra/gcp/cloudbuild.tf.
+# Manual run: gcloud builds submit --config cloudbuild.yaml --substitutions=SHORT_SHA=manual
+substitutions:
+  _REGION: us-central1
+  _REPOSITORY: tft
+  _JOB: tft-ingest
+  _IMAGE: ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/ingest
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.jobs
+      - -t
+      - ${_IMAGE}:${SHORT_SHA}
+      - -t
+      - ${_IMAGE}:latest
+      - .
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: [push, --all-tags, "${_IMAGE}"]
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - update
+      - ${_JOB}
+      - --image=${_IMAGE}:${SHORT_SHA}
+      - --region=${_REGION}
+
+options:
+  dynamicSubstitutions: true
+  # Required when the build runs as a user-managed service account
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 1200s

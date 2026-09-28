@@ -1,3 +1,13 @@
+# DEPRECATED: ingestion now uploads to GCS (see infra/gcp/main.tf,
+# google_storage_bucket.tft_match_data) instead of this Backblaze B2 bucket.
+#
+# This file is kept only so `terraform destroy` still has the provider config
+# needed to tear down the real B2 bucket + key it created. To finish the move:
+#   1. terraform destroy   (uses the state already on disk; deletes the B2
+#                            bucket and the tft-ingest-service-key)
+#   2. rm main.tf terraform.tfstate terraform.tfstate.backup .terraform.lock.hcl
+#      (all already gitignored except main.tf, which is still tracked)
+# Do this once you've confirmed the GCS bucket in infra/gcp is receiving data.
 terraform {
     required_providers {
         b2 = {

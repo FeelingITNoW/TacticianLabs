@@ -22,3 +22,10 @@
 **/values.dev.yaml
 LICENSE
 README.md
+
+# Secrets and local state that must never end up in an image
+**/terraform.tfvars
+**/*.tfstate
+**/*.tfstate.backup
+**/.terraform
+tfplan
