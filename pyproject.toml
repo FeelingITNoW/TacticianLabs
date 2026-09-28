@@ -17,6 +17,7 @@ dev = [
     "pytest>=9.0.2",
     "pytest-asyncio>=0.23",
     "python-dotenv>=1.2.2",
+    "ruff==0.15.9",
     "supabase>=2.28.3",
 ]
 
@@ -30,3 +31,10 @@ markers = [
 
 [tool.ruff]
 extend-exclude = [".conda", ".venv-1", "logs", "plugins"]
+
+[tool.ruff.lint]
+# Ruff's own conservative defaults, pinned explicitly so a version bump
+# (local, CI, or ruff-action falling back to "latest") can't silently
+# pull in a much larger ruleset (isort, pylint, flake8-datetimez, etc.)
+# that this codebase was never written against.
+select = ["E4", "E7", "E9", "F"]
