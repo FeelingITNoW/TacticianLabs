@@ -2,30 +2,32 @@ import httpx
 
 from .http_client import riot_get_with_retry
 
+# Apex tiers are served by their own list endpoints rather than /entries/{tier}/{division}
+_APEX_TIER_PATHS = {
+    "CHALLENGER": "challenger",
+    "GRANDMASTER": "grandmaster",
+    "MASTER": "master",
+}
 
-async def get_challengers(client: httpx.AsyncClient, region: str) -> list[dict]:
-    url = (
-        f"https://{region}.api.riotgames.com/tft/league/v1/challenger?queue=RANKED_TFT"
-    )
+
+async def get_league_entries(client: httpx.AsyncClient, region: str, tier: str) -> dict:
+    """Full league list for an apex tier: top-level `tier` plus `entries`
+    (puuid, rank, leaguePoints, wins, losses, hotStreak, ...)."""
+    url = f"https://{region}.api.riotgames.com/tft/league/v1/{_APEX_TIER_PATHS[tier]}?queue=RANKED_TFT"
     response = await riot_get_with_retry(client, url=url)
-    players = response.json()["entries"]
-    challengers = [player["puuid"] for player in players]
-    return challengers
+    return response.json()
 
 
-async def get_grandmasters(client: httpx.AsyncClient, region: str) -> list[dict]:
-    url = (
-        f"https://{region}.api.riotgames.com/tft/league/v1/grandmaster?queue=RANKED_TFT"
-    )
-    response = await riot_get_with_retry(client, url=url)
-    players = response.json()["entries"]
-    grandmasters = [player["puuid"] for player in players]
-    return grandmasters
+async def get_challengers(client: httpx.AsyncClient, region: str) -> list[str]:
+    league = await get_league_entries(client, region, "CHALLENGER")
+    return [player["puuid"] for player in league["entries"]]
 
 
-async def get_masters(client: httpx.AsyncClient, region: str) -> list[dict]:
-    url = f"https://{region}.api.riotgames.com/tft/league/v1/master?queue=RANKED_TFT"
-    response = await riot_get_with_retry(client, url=url)
-    players = response.json()["entries"]
-    masters = [player["puuid"] for player in players]
-    return masters
+async def get_grandmasters(client: httpx.AsyncClient, region: str) -> list[str]:
+    league = await get_league_entries(client, region, "GRANDMASTER")
+    return [player["puuid"] for player in league["entries"]]
+
+
+async def get_masters(client: httpx.AsyncClient, region: str) -> list[str]:
+    league = await get_league_entries(client, region, "MASTER")
+    return [player["puuid"] for player in league["entries"]]

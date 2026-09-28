@@ -2,8 +2,8 @@ import json
 import httpx
 
 from airflow.sdk import dag, task  # type: ignore
-from airflow.providers.amazon.aws.hooks.s3 import S3Hook  # type: ignore
-from b2_bucket_api.upload_to_bucket import upload_matches as upload_matches_to_b2
+from airflow.providers.google.cloud.hooks.gcs import GCSHook  # type: ignore
+from gcs_bucket_api.upload_to_bucket import upload_matches
 from datetime import datetime
 from db.parse_match_data import parse_match_data
 from google import genai
@@ -19,7 +19,7 @@ from riot_api.constants import RIOT_REGIONS, HIGH_ELO_TIERS
     default_args={"owner": "Astro", "retries": 3},
     tags=["data upsert"],
 )
-def upsert_json_to_b2_bucket():
+def upsert_json_to_bucket_and_db():
 
     @task(max_active_tis_per_dagrun=1)
     async def collect_match_ids_task(region: str) -> dict:
@@ -33,27 +33,41 @@ def upsert_json_to_b2_bucket():
 
     @task(max_active_tis_per_dagrun=1)
     async def collect_matches_task(collection_result: dict) -> dict:
+        import os
+        from supabase import create_client
+        from db.parse_match_data import filter_new_match_ids
+
+        supabase_client = create_client(
+            os.environ["supabase_url"],
+            os.environ["supabase_key"],
+        )
+        # Skip matches a previous run already ingested (the look-back windows overlap)
+        new_match_ids = filter_new_match_ids(
+            supabase_client, collection_result["match_ids"]
+        )
         async with httpx.AsyncClient() as async_client:
             return await collect_matches(
                 client=async_client,
-                match_ids=collection_result["match_ids"],
+                match_ids=new_match_ids,
                 match_region=collection_result["match_region"],
             )
 
     @task
-    async def upload_to_b2_task(match_data: dict) -> None:
-        hook = S3Hook(aws_conn_id="backblaze_b2")
-        s3_client = hook.get_conn()
+    async def upload_to_gcs_task(match_data: dict) -> None:
+        import os
+
+        hook = GCSHook(gcp_conn_id="google_cloud_default")
+        storage_client = hook.get_conn()
         async with httpx.AsyncClient() as async_client:
             riot_versions = (
                 await async_client.get(
                     "https://ddragon.leagueoflegends.com/api/versions.json"
                 )
             ).json()
-            await upload_matches_to_b2(
+            await upload_matches(
                 match_data=match_data,
-                s3_client=s3_client,
-                bucket_name="tft-match-data",
+                storage_client=storage_client,
+                bucket_name=os.environ.get("GCS_BUCKET", "tft-match-data"),
                 riot_version=riot_versions[0],
             )
 
@@ -61,7 +75,7 @@ def upsert_json_to_b2_bucket():
     async def upsert_players_task() -> None:
         import os
         from supabase import create_client
-        from db.getRiotAPIData import populate_player_table_with_tiered_data
+        from db.upsert_players import upsert_high_elo_players
 
         supabase_client = create_client(
             os.environ["supabase_url"],
@@ -69,7 +83,7 @@ def upsert_json_to_b2_bucket():
         )
         async with httpx.AsyncClient() as async_client:
             for region in RIOT_REGIONS:
-                await populate_player_table_with_tiered_data(
+                await upsert_high_elo_players(
                     client=async_client,
                     region=region,
                     db_client=supabase_client,
@@ -108,10 +122,10 @@ def upsert_json_to_b2_bucket():
     collected_matches = collect_matches_task.expand(
         collection_result=collection_results
     )
-    uploaded = upload_to_b2_task.expand(match_data=collected_matches)
+    uploaded = upload_to_gcs_task.expand(match_data=collected_matches)
     players_done = upsert_players_task()
     upsert_db = upsert_to_db_task.expand(matches_data=collected_matches)
     [uploaded, players_done] >> upsert_db
 
 
-upsert_json_to_b2_bucket()
+upsert_json_to_bucket_and_db()

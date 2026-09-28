@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars (gitignored) and fill in.
+project_id   = "my-gcp-project"
+region       = "us-central1"
+supabase_url = "https://<ref>.supabase.co"
+
+# From: gcloud developer-connect connections git-repository-links list \
+#         --connection=<connection-name> --location=<connection-region> --format='value(name)'
+# The connection's region can differ from `region` above (Cloud Run/Artifact
+# Registry/Scheduler's region) — if so, also set developer_connect_region.
+git_repository_link      = "projects/my-gcp-project/locations/us-central1/connections/github/gitRepositoryLinks/FeelingITNoW-clone.tools"
+# developer_connect_region = "northamerica-northeast2"

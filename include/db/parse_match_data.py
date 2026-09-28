@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from google import genai
 from supabase import create_client, Client
 
-from google_embedding.embedding_call import get_embedding
+from google_embedding.embedding_call import get_embeddings
 from riot_api.constants import TFT_RANKED_QUEUE_ID
 
 load_dotenv()
@@ -78,14 +78,28 @@ def parse_match_data(
     participants = match_data["info"]["participants"]
 
     # Build all composition rows first, then upsert in a single batch flow.
+    player_rows: list[dict] = []
     participant_rows: list[dict] = []
     trait_rows: list[dict] = []
     unit_rows: list[dict] = []
+    compositions: list[tuple[list[str], list[str]]] = []
+    # Match IDs are prefixed with the platform, e.g. "NA1_5123456789"
+    platform = match_uuid.split("_")[0]
     for participant in participants:
         match_id = match_uuid
         puuid = participant["puuid"]
         participant_traits = []
         participant_units = []
+        # participants.puuid has an FK to players, and lobbies include players
+        # outside the tiers we crawl, so every participant needs a players row.
+        player_rows.append(
+            {
+                "puuid": puuid,
+                "game_name": participant.get("riotIdGameName"),
+                "tag_line": participant.get("riotIdTagline"),
+                "region": platform,
+            }
+        )
         for trait in participant["traits"]:
             trait_rows.append(
                 {
@@ -112,12 +126,7 @@ def parse_match_data(
                 }
             )
             participant_units.append(unit["character_id"])
-        # Generate vector embeddings from traits and units for each participant and add to participant_rows
-        vector_embedding = get_embedding(
-            api_key=os.getenv("GEMINI_API_KEY"),
-            participant_units=participant_units,
-            participant_traits=participant_traits,
-        )
+        compositions.append((participant_units, participant_traits))
 
         participant_rows.append(
             {
@@ -128,9 +137,15 @@ def parse_match_data(
                 "gold_left": participant["gold_left"],
                 "last_round": participant["last_round"],
                 "total_damage_to_players": participant["total_damage_to_players"],
-                "embedding": vector_embedding,
             }
         )
+
+    # One embedding request per match instead of one per participant
+    if participant_rows:
+        embeddings = get_embeddings(google_genai_client, compositions)
+        for row, embedding in zip(participant_rows, embeddings):
+            row["embedding"] = embedding
+
     # Deduplicate within batch to avoid ON CONFLICT affecting the same row twice
     seen_traits: dict = {}
     for row in trait_rows:
@@ -145,17 +160,29 @@ def parse_match_data(
     match_table_entry = prepare_match_table(
         tft_set_number, patch_number, client, match_uuid, game_datetime, game_length
     )
+    # Upserts keep re-runs idempotent: the daily look-back window overlaps the previous run.
+    if player_rows:
+        _execute_with_retry(
+            client.table("players").upsert(player_rows, on_conflict="puuid")
+        )
     if participant_rows:
-        _execute_with_retry(client.table("participants").insert(participant_rows))
-
-    # Batch upsert traits and units
+        _execute_with_retry(
+            client.table("participants").upsert(
+                participant_rows, on_conflict="match_id,puuid"
+            )
+        )
     if trait_rows:
-        _execute_with_retry(client.table("traits").insert(trait_rows))
+        _execute_with_retry(
+            client.table("traits").upsert(trait_rows, on_conflict="match_id,puuid,name")
+        )
+    # units has a surrogate uuid key, so replace the match's rows rather than upsert
+    _execute_with_retry(client.table("units").delete().eq("match_id", match_uuid))
     if unit_rows:
         _execute_with_retry(client.table("units").insert(unit_rows))
 
     return {
         "match_table_entry": match_table_entry,
+        "player_rows": player_rows,
         "participant_rows": participant_rows,
         "trait_rows": trait_rows,
         "unit_rows": unit_rows,
@@ -188,6 +215,20 @@ def prepare_match_table(
             raise
 
     return match_entry
+
+
+def filter_new_match_ids(
+    client: Client, match_ids: list[str], chunk_size: int = 100
+) -> list[str]:
+    """Drop match IDs that are already in the matches table."""
+    existing: set[str] = set()
+    for i in range(0, len(match_ids), chunk_size):
+        chunk = match_ids[i : i + chunk_size]
+        response = _execute_with_retry(
+            client.table("matches").select("match_id").in_("match_id", chunk)
+        )
+        existing.update(row["match_id"] for row in response.data)
+    return [match_id for match_id in match_ids if match_id not in existing]
 
 
 if __name__ == "__main__":
