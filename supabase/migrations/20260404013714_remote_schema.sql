@@ -53,27 +53,6 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
 
 
 CREATE EXTENSION IF NOT EXISTS "wrappers" WITH SCHEMA "extensions";
-
-
-
-
-
-
-CREATE FOREIGN DATA WRAPPER "s3_wrapper" HANDLER "extensions"."s3_fdw_handler" VALIDATOR "extensions"."s3_fdw_validator";
-
-
-
-
-CREATE SERVER "backblaze_server" FOREIGN DATA WRAPPER "s3_wrapper" OPTIONS (
-    "aws_access_key_id" '798c1494eb30',
-    "aws_region" 'ca-east-006',
-    "aws_secret_access_key" '0067ec37c194b32a99c12cba26cc32443fc6549963',
-    "endpoint_url" 's3.ca-east-006.backblazeb2.com'
-);
-
-
-ALTER SERVER "backblaze_server" OWNER TO "postgres";
-
 SET default_tablespace = '';
 
 SET default_table_access_method = "heap";

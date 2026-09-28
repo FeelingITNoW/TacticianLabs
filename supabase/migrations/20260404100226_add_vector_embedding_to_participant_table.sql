@@ -1,2 +1,2 @@
 ALTER TABLE "public"."participants"
-ADD COLUMN "embedding" VECTOR(768);
+ADD COLUMN "embedding" extensions.VECTOR(768);

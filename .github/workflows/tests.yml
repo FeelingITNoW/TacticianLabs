@@ -1,0 +1,30 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.83.0
+
+      - name: Start local Supabase (db + kong + postgrest only)
+        run: |
+          supabase start -x gotrue,realtime,storage-api,imgproxy,edge-runtime,logflare,vector,supavisor,studio,mailpit,postgres-meta
+
+      - name: Build the Astro runtime image
+        run: docker build -t clone-tools-ci .
+
+      - name: Run pytest inside the Astro runtime image
+        run: |
+          docker run --rm --network host \
+            -e LOCAL_SUPABASE_URL=http://127.0.0.1:54321 \
+            -e GEMINI_API_KEY=ci-dummy -e RIOT_API_KEY=ci-dummy \
+            clone-tools-ci python -m pytest tests -v -m "not integration"
