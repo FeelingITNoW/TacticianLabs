@@ -9,7 +9,7 @@ Cloud Scheduler (06:00 UTC) ─▶ Cloud Run Job tft-ingest (4 tasks: AMERICAS /
                                   └▶ Riot API ─▶ GCS (raw JSON) + BigQuery `tft` (parsed rows + Gemini embeddings)
 ```
 
-This state is separate from the (now-deprecated) B2 Terraform in the repo root — see the note at the top of `../../main.tf` for retiring it. The match archive lives in `google_storage_bucket.tft_match_data` here; the job authenticates to it with the `tft-ingest-runner` service account's default credentials, no key needed.
+The match archive lives in `google_storage_bucket.tft_match_data` here; the job authenticates to it with the `tft-ingest-runner` service account's default credentials, no key needed.
 
 ## One-time setup
 

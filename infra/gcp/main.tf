@@ -33,7 +33,7 @@ resource "google_project_service" "apis" {
   disable_on_destroy = false
 }
 
-# --- Match archive (replaces the Backblaze B2 bucket in the repo-root main.tf) ---
+# --- Match archive ---
 
 resource "google_storage_bucket" "tft_match_data" {
   name                        = local.gcs_bucket_name
