@@ -1,0 +1,9 @@
+[
+  {"name": "match_id", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "played_at", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "Riot info.game_datetime"},
+  {"name": "game_length", "type": "FLOAT64"},
+  {"name": "game_version", "type": "STRING", "description": "Data Dragon version at ingest time; the stats patch key"},
+  {"name": "tft_set_number", "type": "INT64"},
+  {"name": "queue_id", "type": "INT64"},
+  {"name": "region", "type": "STRING", "description": "Platform prefix of match_id, e.g. NA1"}
+]

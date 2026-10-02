@@ -1,18 +1,19 @@
 """
 One-time script to populate the champions, traits, and items reference tables.
 
-Run this before the calculate_tft_stats DAG so it has data to iterate over.
+Rows are keyed on Riot's api name (e.g. TFT_Item_BFSword), which match payloads
+use and which stays the same across patches. Each run replaces a table's contents.
 
 Usage:
-    python include/db/seed_tft16_reference_data.py
+    PYTHONPATH=include python -m db.seed_tft16_reference_data
 """
 
 import json
-import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from supabase import create_client
+
+from db.bq import insert_from_staging_sql, make_client, run_query, staged, table_ref
 
 WORKSPACE_ROOT = Path(__file__).parent.parent.parent
 
@@ -22,13 +23,14 @@ def _load_tft16_champions() -> list[dict]:
         data = json.load(f)
 
     # Only set 16 champions (id starts with TFT16_)
-    entries = sorted(
-        [v for v in data["data"].values() if v["id"].startswith("TFT16_")],
-        key=lambda v: v["id"],
+    return sorted(
+        [
+            {"api_name": v["id"], "name": v["name"], "cost": v.get("cost")}
+            for v in data["data"].values()
+            if v["id"].startswith("TFT16_")
+        ],
+        key=lambda row: row["api_name"],
     )
-    return [
-        {"champion_id": i + 1, "name": entry["id"]} for i, entry in enumerate(entries)
-    ]
 
 
 def _load_tft16_traits() -> list[dict]:
@@ -36,11 +38,14 @@ def _load_tft16_traits() -> list[dict]:
         data = json.load(f)
 
     # Only set 16 traits (id starts with TFT16_)
-    entries = sorted(
-        [v for v in data["data"].values() if v["id"].startswith("TFT16_")],
-        key=lambda v: v["id"],
+    return sorted(
+        [
+            {"api_name": v["id"], "name": v["name"]}
+            for v in data["data"].values()
+            if v["id"].startswith("TFT16_")
+        ],
+        key=lambda row: row["api_name"],
     )
-    return [{"trait_id": i + 1, "name": entry["id"]} for i, entry in enumerate(entries)]
 
 
 def _load_items() -> list[dict]:
@@ -48,39 +53,39 @@ def _load_items() -> list[dict]:
         data = json.load(f)
 
     # Equippable items: contain _Item_ in id, exclude Consumables and Tutorial items
-    entries = sorted(
+    return sorted(
         [
-            v
+            {"api_name": v["id"], "name": v["name"]}
             for v in data["data"].values()
             if "_Item_" in v["id"]
             and "Consumable" not in v["id"]
             and "Tutorial" not in v["id"]
             and v["name"]  # skip entries with empty display names
         ],
-        key=lambda v: v["id"],
+        key=lambda row: row["api_name"],
     )
-    return [{"item_id": i + 1, "name": entry["id"]} for i, entry in enumerate(entries)]
 
 
 def seed_reference_data() -> None:
     load_dotenv()
-    supabase = create_client(
-        os.environ["supabase_url"],
-        os.environ["supabase_key"],
-    )
+    client = make_client()
 
-    champions = _load_tft16_champions()
-    traits = _load_tft16_traits()
-    items = _load_items()
-
-    print(f"Seeding {len(champions)} TFT16 champions...")
-    supabase.table("champions").upsert(champions).execute()
-
-    print(f"Seeding {len(traits)} TFT16 traits...")
-    supabase.table("traits_reference").upsert(traits).execute()
-
-    print(f"Seeding {len(items)} items (non-consumable)...")
-    supabase.table("items").upsert(items).execute()
+    for table, rows in (
+        ("champions", _load_tft16_champions()),
+        ("traits", _load_tft16_traits()),
+        ("items", _load_items()),
+    ):
+        print(f"Seeding {len(rows)} {table}...")
+        # Swap contents in a transaction rather than a WRITE_TRUNCATE load, which
+        # would replace the table's metadata along with its rows.
+        with staged(client, {table: rows}) as staging:
+            run_query(
+                client,
+                "BEGIN TRANSACTION;\n"
+                f"DELETE FROM `{table_ref(client, table)}` WHERE TRUE;\n"
+                f"{insert_from_staging_sql(client, table, staging[table])}\n"
+                "COMMIT TRANSACTION;",
+            )
 
     print("Done.")
 

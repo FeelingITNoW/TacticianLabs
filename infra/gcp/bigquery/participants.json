@@ -1,0 +1,11 @@
+[
+  {"name": "match_id", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "puuid", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "played_at", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "Copied from matches for partitioning"},
+  {"name": "placement", "type": "INT64", "mode": "REQUIRED"},
+  {"name": "level", "type": "INT64"},
+  {"name": "gold_left", "type": "INT64"},
+  {"name": "last_round", "type": "INT64"},
+  {"name": "total_damage_to_players", "type": "INT64"},
+  {"name": "embedding", "type": "FLOAT64", "mode": "REPEATED", "description": "768-dim gemini-embedding-001 vector of the board"}
+]

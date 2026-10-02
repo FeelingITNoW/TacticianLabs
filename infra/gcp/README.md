@@ -6,7 +6,7 @@ Runs `include/jobs/ingest_matches.py` daily as a Cloud Run Job. Each push to `ma
 GitHub push ─▶ Developer Connect ─▶ Cloud Build (cloudbuild.yaml) ─▶ Artifact Registry
                                                                    └▶ gcloud run jobs update
 Cloud Scheduler (06:00 UTC) ─▶ Cloud Run Job tft-ingest (4 tasks: AMERICAS / ASIA / EUROPE / SEA)
-                                  └▶ Riot API ─▶ GCS (raw JSON) + Supabase (parsed rows + Gemini embeddings)
+                                  └▶ Riot API ─▶ GCS (raw JSON) + BigQuery `tft` (parsed rows + Gemini embeddings)
 ```
 
 This state is separate from the (now-deprecated) B2 Terraform in the repo root — see the note at the top of `../../main.tf` for retiring it. The match archive lives in `google_storage_bucket.tft_match_data` here; the job authenticates to it with the `tft-ingest-runner` service account's default credentials, no key needed.
@@ -29,7 +29,7 @@ This state is separate from the (now-deprecated) B2 Terraform in the repo root �
    terraform init
    terraform apply -target=google_secret_manager_secret.job
 
-   for id in supabase-key gemini-api-key riot-api-key; do
+   for id in gemini-api-key riot-api-key; do
      read -rsp "$id: " v; echo; printf '%s' "$v" | gcloud secrets versions add "$id" --data-file=-
    done
 
@@ -37,7 +37,12 @@ This state is separate from the (now-deprecated) B2 Terraform in the repo root �
    ```
    `riot-api-key` must be a **Personal** (or Production) key. Development keys expire after 24 hours, so a daily job using one would start failing the next day.
 
-3. **Build the first image.** Terraform creates the job with a placeholder image. Either push to `main`, or run:
+3. **Seed the reference tables** (needs `gcloud auth application-default login`):
+   ```sh
+   GOOGLE_CLOUD_PROJECT=<project_id> PYTHONPATH=include python -m db.seed_tft16_reference_data
+   ```
+
+4. **Build the first image.** Terraform creates the job with a placeholder image. Either push to `main`, or run:
    ```sh
    gcloud builds trigger run tft-ingest-deploy --region=us-central1 --branch=main
    ```
@@ -55,6 +60,12 @@ This state is separate from the (now-deprecated) B2 Terraform in the repo root �
 gcloud auth application-default login
 ```
 and Docker runs (`docker run ... tft-ingest`) will pick them up from `~/.config/gcloud` if you mount it, e.g. `-v ~/.config/gcloud:/home/app/.config/gcloud:ro`. Set `SKIP_GCS_UPLOAD=1` to skip the bucket entirely for a quick DB-only smoke test.
+
+## BigQuery
+
+`bigquery.tf` creates the `tft` dataset, a `tft_staging` dataset whose tables expire after a day, and one table per file in `bigquery/`. Primary and foreign keys are recorded `NOT ENFORCED`. The provider only takes single-column foreign keys, so composite ones are noted in the table descriptions. Tables have `deletion_protection` on (the provider default), so a change that forces replacement fails at apply instead of dropping data.
+
+The job writes with free load jobs into `tft_staging`, then one SQL script per 50-match chunk. That script's deletes are bounded by `played_at` partitions and clustered on `match_id`, so it scans little. The stats DAG reads every participant once per stats table per day. Both stay well inside the 1 TB/month free query tier at current volumes.
 
 ## Cost notes
 

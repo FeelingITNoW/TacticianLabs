@@ -8,16 +8,15 @@ Set REGIONS=SG2,KR to override the sharding for local runs.
 """
 
 import asyncio
-import json
 import os
 import sys
 
 import httpx
 from google import genai
-from google.cloud import storage
-from supabase import Client, create_client
+from google.cloud import bigquery, storage
 
-from db.parse_match_data import filter_new_match_ids, parse_match_data
+from db.bq import make_client
+from db.parse_match_data import filter_new_match_ids, write_matches
 from db.upsert_players import upsert_high_elo_players
 from gcs_bucket_api.upload_to_bucket import upload_matches
 from riot_api.constants import (
@@ -72,7 +71,7 @@ def make_storage_client():
 
 async def ingest_routing_group(
     http_client: httpx.AsyncClient,
-    db_client: Client,
+    db_client: bigquery.Client,
     genai_client: genai.Client,
     storage_client,
     routing: str,
@@ -113,18 +112,16 @@ async def ingest_routing_group(
         if storage_client is not None:
             await upload_matches(matches, storage_client, bucket, latest_version)
 
-        for match_id, body in matches.items():
-            try:
-                parse_match_data(
-                    match_data=json.loads(body),
-                    client=db_client,
-                    latest_version=latest_version,
-                    google_genai_client=genai_client,
-                )
-                ingested += 1
-            except Exception as exc:
-                failures += 1
-                print(f"[{routing}] failed to ingest {match_id}: {exc!r}")
+        try:
+            written, failed = write_matches(
+                db_client, matches, latest_version, genai_client
+            )
+        except Exception as exc:
+            failures += len(matches)
+            print(f"[{routing}] writing chunk of {len(matches)} matches failed: {exc!r}")
+            continue
+        ingested += written
+        failures += failed
 
     print(f"[{routing}] ingested {ingested} matches, {failures} failures")
     return failures
@@ -138,7 +135,7 @@ async def main() -> int:
     print(f"Assigned routing groups: {groups}")
 
     max_matches = int(os.environ["MAX_MATCHES"]) if os.getenv("MAX_MATCHES") else None
-    db_client = create_client(os.environ["supabase_url"], os.environ["supabase_key"])
+    db_client = make_client()
     genai_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
     storage_client = make_storage_client()
 

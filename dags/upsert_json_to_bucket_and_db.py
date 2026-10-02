@@ -1,14 +1,22 @@
-import json
 import httpx
 
 from airflow.sdk import dag, task  # type: ignore
+from airflow.providers.google.cloud.hooks.bigquery import BigQueryHook  # type: ignore
 from airflow.providers.google.cloud.hooks.gcs import GCSHook  # type: ignore
 from gcs_bucket_api.upload_to_bucket import upload_matches
 from datetime import datetime
-from db.parse_match_data import parse_match_data
+from db.parse_match_data import write_matches
 from google import genai
 from riot_api.match_api import collect_match_ids, collect_matches
 from riot_api.constants import RIOT_REGIONS, HIGH_ELO_TIERS
+
+# Matches per BigQuery write: one staging round and one SQL script each
+WRITE_CHUNK_SIZE = 50
+
+
+def _bigquery_client():
+    # Same connection and service account as the GCS archive
+    return BigQueryHook(gcp_conn_id="google_cloud_default").get_client()
 
 
 @dag(
@@ -33,17 +41,11 @@ def upsert_json_to_bucket_and_db():
 
     @task(max_active_tis_per_dagrun=1)
     async def collect_matches_task(collection_result: dict) -> dict:
-        import os
-        from supabase import create_client
         from db.parse_match_data import filter_new_match_ids
 
-        supabase_client = create_client(
-            os.environ["supabase_url"],
-            os.environ["supabase_key"],
-        )
         # Skip matches a previous run already ingested (the look-back windows overlap)
         new_match_ids = filter_new_match_ids(
-            supabase_client, collection_result["match_ids"]
+            _bigquery_client(), collection_result["match_ids"]
         )
         async with httpx.AsyncClient() as async_client:
             return await collect_matches(
@@ -73,26 +75,20 @@ def upsert_json_to_bucket_and_db():
 
     @task
     async def upsert_players_task() -> None:
-        import os
-        from supabase import create_client
         from db.upsert_players import upsert_high_elo_players
 
-        supabase_client = create_client(
-            os.environ["supabase_url"],
-            os.environ["supabase_key"],
-        )
+        bigquery_client = _bigquery_client()
         async with httpx.AsyncClient() as async_client:
             for region in RIOT_REGIONS:
                 await upsert_high_elo_players(
                     client=async_client,
                     region=region,
-                    db_client=supabase_client,
+                    db_client=bigquery_client,
                 )
 
     @task
     async def upsert_to_db_task(matches_data: dict) -> None:
         import os
-        from supabase import create_client
 
         async with httpx.AsyncClient() as async_client:
             riot_versions = (
@@ -102,21 +98,23 @@ def upsert_json_to_bucket_and_db():
             ).json()
             latest_version = riot_versions[0]
 
-        supabase_client = create_client(
-            os.environ["supabase_url"],
-            os.environ["supabase_key"],
-        )
+        bigquery_client = _bigquery_client()
         google_genai_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
-        for match_id in matches_data.keys():
-            match_data = json.loads(matches_data[match_id])
-            print(f"Processing match_id: {match_id}")
-            parse_match_data(
-                match_data=match_data,
-                client=supabase_client,
-                latest_version=latest_version,
-                google_genai_client=google_genai_client,
+        match_ids = list(matches_data)
+        failed = 0
+        for start in range(0, len(match_ids), WRITE_CHUNK_SIZE):
+            chunk = {
+                match_id: matches_data[match_id]
+                for match_id in match_ids[start : start + WRITE_CHUNK_SIZE]
+            }
+            written, chunk_failed = write_matches(
+                bigquery_client, chunk, latest_version, google_genai_client
             )
+            failed += chunk_failed
+            print(f"Wrote {written} of {len(chunk)} matches")
+        if failed:
+            raise RuntimeError(f"{failed} matches failed to parse")
 
     collection_results = collect_match_ids_task.expand(region=RIOT_REGIONS)
     collected_matches = collect_matches_task.expand(
