@@ -17,7 +17,7 @@ A TFT (Teamfight Tactics) analytics pipeline, heading toward a tactics.tools clo
 Airflow runs through the Astro CLI in Docker (`Dockerfile` = Astro Runtime 3.1, Python 3.12 inside the container):
 - `astro dev start` / `astro dev restart`: Airflow UI at http://localhost:8080
 - `astro dev pytest`: runs `tests/` inside the Airflow container (this is how `pytest.log` was produced)
-- `astro dev pytest tests/dags/test_upsert_json_to_bucket_and_db.py -- -k TestParseMatchData`: run a single test/class
+- `astro dev pytest tests/dags/test_ingest_matches_to_gcs_and_bigquery.py -- -k TestParseMatchData`: run a single test/class
 - `astro dev parse`: DAG integrity check (uses `.astro/test_dag_integrity_default.py`, don't edit it)
 
 BigQuery:
@@ -37,8 +37,8 @@ Host-side Python uses uv (`pyproject.toml`, Python 3.14, deps in the `dev` group
 
 **Dependencies live in four places:** `requirements.txt` (Astro/Airflow image), `requirements-jobs.txt` (Cloud Run job image), `pyproject.toml` (uv host env), and `requirements-data.txt` (the Node dev container). Add Airflow-runtime deps to `requirements.txt`, and to `requirements-jobs.txt` too if `include/` code used by the job needs them.
 
-**`upsert_json_to_bucket_and_db` DAG (daily):**
-`collect_match_ids_task.expand(region=RIOT_REGIONS)` → `collect_matches_task` → fans out to `upload_to_gcs_task` (key `tft/matches/{ddragon_version}/{utc_date}/{match_id}.json`) and `upsert_to_db_task`. `upsert_players_task` runs before the DB upsert. Both DAGs reach BigQuery through `BigQueryHook(gcp_conn_id="google_cloud_default").get_client()`. Tasks are `async` and use `httpx.AsyncClient`. The Riot fetch tasks run with `max_active_tis_per_dagrun=1` to respect rate limits.
+**`ingest_matches_to_gcs_and_bigquery` DAG (daily):**
+`collect_match_ids_task.expand(region=RIOT_REGIONS)` → `collect_matches_task` → fans out to `upload_to_gcs_task` (key `tft/matches/{ddragon_version}/{utc_date}/{match_id}.json`) and `upsert_to_bigquery_task`. `upsert_players_task` runs before the DB upsert. Both DAGs reach BigQuery through `BigQueryHook(gcp_conn_id="google_cloud_default").get_client()`. Tasks are `async` and use `httpx.AsyncClient`. The Riot fetch tasks run with `max_active_tis_per_dagrun=1` to respect rate limits.
 
 **Riot API (`include/riot_api/`).** This is the canonical client. `constants.py` has the regions, the platform→routing map (`RIOT_REGIONS_MAP`) and `HIGH_ELO_TIERS`. League endpoints use the platform (`NA1`), match endpoints use the routing region (`AMERICAS`). Use `riot_get_with_retry` (429/backoff). `riot_data_retrieval.py` is only a re-export shim. `league_api.get_league_entries` returns the full apex-tier list; `include/db/upsert_players.py` builds `players`/`player_ranked_stats` rows straight from it (no per-player calls) and MERGEs them. Riot dev keys expire every 24h, so scheduled runs need a Personal key.
 

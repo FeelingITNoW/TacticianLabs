@@ -42,7 +42,7 @@ Tasks (with dependencies):
 3. `aggregate_item_stats` — UNNEST item_names array, GROUP BY item, aggregate placement stats + usage_rate (usage_count / total_matches)
 4. `aggregate_unit_item_stats` — UNNEST items per unit row, GROUP BY (character_id, item_name) — *depends on tasks 1, 2, 3*
 5. `compute_trends` — Insert daily snapshots into composition_trends by slicing over game_datetime — *depends on task 1*
-6. Schedule: `@daily`, runs AFTER the existing `upsert_json_to_b2_bucket` DAG completes (use `ExternalTaskSensor`)
+6. Schedule: `@daily`, runs AFTER the existing `ingest_matches_to_gcs_and_bigquery` DAG completes (use `ExternalTaskSensor`)
 
 Key SQL pattern for compositions: join participants → traits, sort trait names array, string_agg as comp_key, aggregate placement.
 
@@ -147,7 +147,7 @@ fastapi, uvicorn, supabase, google-generativeai, python-dotenv
 | `docker-compose.yml` | Add api service |
 | `package.json` | Add Tailwind, Recharts, Lucide |
 | `supabase/migrations/` | New migration files (pgvector, analytics tables) |
-| `dags/upsert_json_to_b2_bucket.py` | Multi-region support |
+| `dags/ingest_matches_to_gcs_and_bigquery.py` | Multi-region support |
 
 ## New Files
 - `supabase/migrations/XXXXXX_analytics_schema.sql`

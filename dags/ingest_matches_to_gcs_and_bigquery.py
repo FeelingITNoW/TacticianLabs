@@ -20,14 +20,14 @@ def _bigquery_client():
 
 
 @dag(
-    dag_id="upsert_json_to_bucket_and_db",
+    dag_id="ingest_matches_to_gcs_and_bigquery",
     schedule="@daily",
     start_date=datetime(2026, 1, 1),
     catchup=False,
     default_args={"owner": "Astro", "retries": 3},
     tags=["data upsert"],
 )
-def upsert_json_to_bucket_and_db():
+def ingest_matches_to_gcs_and_bigquery():
 
     @task(max_active_tis_per_dagrun=1)
     async def collect_match_ids_task(region: str) -> dict:
@@ -87,7 +87,7 @@ def upsert_json_to_bucket_and_db():
                 )
 
     @task
-    async def upsert_to_db_task(matches_data: dict) -> None:
+    async def upsert_to_bigquery_task(matches_data: dict) -> None:
         import os
 
         async with httpx.AsyncClient() as async_client:
@@ -122,8 +122,8 @@ def upsert_json_to_bucket_and_db():
     )
     uploaded = upload_to_gcs_task.expand(match_data=collected_matches)
     players_done = upsert_players_task()
-    upsert_db = upsert_to_db_task.expand(matches_data=collected_matches)
+    upsert_db = upsert_to_bigquery_task.expand(matches_data=collected_matches)
     [uploaded, players_done] >> upsert_db
 
 
-upsert_json_to_bucket_and_db()
+ingest_matches_to_gcs_and_bigquery()

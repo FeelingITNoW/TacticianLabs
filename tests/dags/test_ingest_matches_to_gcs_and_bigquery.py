@@ -1,5 +1,5 @@
 """
-Tests for the upsert_json_to_bucket_and_db DAG and the individual helper functions it calls.
+Tests for the ingest_matches_to_gcs_and_bigquery DAG and the individual helper functions it calls.
 
 Structure
 ---------
@@ -78,7 +78,7 @@ def make_match_data_unranked_game():
 class TestDagStructure:
     def setup_method(self):
         self.dag_bag = DagBag(include_examples=False)
-        self.dag = self.dag_bag.get_dag("upsert_json_to_bucket_and_db")
+        self.dag = self.dag_bag.get_dag("ingest_matches_to_gcs_and_bigquery")
 
     def test_dag_loads_without_import_errors(self):
         assert not self.dag_bag.import_errors, (
@@ -86,10 +86,10 @@ class TestDagStructure:
         )
 
     def test_dag_exists(self):
-        assert self.dag is not None, "upsert_json_to_bucket_and_db not found in DagBag"
+        assert self.dag is not None, "ingest_matches_to_gcs_and_bigquery not found in DagBag"
 
     def test_dag_id(self):
-        assert self.dag.dag_id == "upsert_json_to_bucket_and_db"
+        assert self.dag.dag_id == "ingest_matches_to_gcs_and_bigquery"
 
     def test_dag_catchup_disabled(self):
         assert self.dag.catchup is False
@@ -108,23 +108,23 @@ class TestDagStructure:
             "collect_matches_task",
             "upload_to_gcs_task",
             "upsert_players_task",
-            "upsert_to_db_task",
+            "upsert_to_bigquery_task",
         ):
             assert any(expected in tid for tid in task_ids), (
                 f"Expected task '{expected}' not found. Tasks: {task_ids}"
             )
 
-    def test_upsert_to_db_task_depends_on_upload_and_players(self):
-        # upsert_to_db_task must run after both upload_to_gcs_task and upsert_players_task
+    def test_upsert_to_bigquery_task_depends_on_upload_and_players(self):
+        # upsert_to_bigquery_task must run after both upload_to_gcs_task and upsert_players_task
         task_ids = {t.task_id for t in self.dag.tasks}
-        upsert_db_id = next(tid for tid in task_ids if "upsert_to_db" in tid)
-        upsert_db_task = self.dag.get_task(upsert_db_id)
-        upstream_ids = {t.task_id for t in upsert_db_task.upstream_list}
+        upsert_bq_id = next(tid for tid in task_ids if "upsert_to_bigquery" in tid)
+        upsert_bq_task = self.dag.get_task(upsert_bq_id)
+        upstream_ids = {t.task_id for t in upsert_bq_task.upstream_list}
         assert any("upload_to_gcs" in uid for uid in upstream_ids), (
-            "upsert_to_db_task must be downstream of upload_to_gcs_task"
+            "upsert_to_bigquery_task must be downstream of upload_to_gcs_task"
         )
         assert any("upsert_players" in uid for uid in upstream_ids), (
-            "upsert_to_db_task must be downstream of upsert_players_task"
+            "upsert_to_bigquery_task must be downstream of upsert_players_task"
         )
 
 
