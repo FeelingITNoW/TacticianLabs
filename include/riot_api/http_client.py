@@ -1,7 +1,7 @@
 import asyncio
 import httpx
 
-from .constants import RIOT_API_KEY
+from .constants import RIOT_API_KEY, RIOT_VERSIONS_URL
 
 
 def _ensure_riot_api_key() -> None:
@@ -65,3 +65,29 @@ async def riot_get_with_retry(
             else:
                 raise
     raise RuntimeError(f"All {max_retries} retries exhausted for {url}")
+
+
+async def get_latest_version(client: httpx.AsyncClient, max_retries: int = 5) -> str:
+    """The newest Data Dragon version (e.g. "16.19.1"), retrying timeouts and 5xx.
+
+    Data Dragon is a CDN, not the Riot API: no key, and no 429s to honor.
+    """
+    delay = 1
+    for attempt in range(max_retries):
+        try:
+            response = await client.get(RIOT_VERSIONS_URL, timeout=30)
+            response.raise_for_status()
+            return response.json()[0]
+        except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+            retryable = not isinstance(exc, httpx.HTTPStatusError) or (
+                exc.response.status_code >= 500
+            )
+            if not retryable or attempt == max_retries - 1:
+                raise
+            print(
+                f"Fetching Data Dragon versions failed, retrying in {delay}s "
+                f"(attempt {attempt + 1}/{max_retries}): {exc!r}"
+            )
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30)
+    raise RuntimeError(f"All {max_retries} retries exhausted for {RIOT_VERSIONS_URL}")
