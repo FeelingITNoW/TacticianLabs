@@ -326,6 +326,11 @@ class TestBuildMatchRows:
         compositions = mock_embed.call_args.args[1]
         assert len(compositions) == len(match_data["info"]["participants"])
         assert all(len(row["embedding"]) == 768 for row in rows["participants"])
+        first_units, _ = compositions[0]
+        assert first_units == [
+            (u["character_id"], u["tier"], u.get("itemNames", []))
+            for u in match_data["info"]["participants"][0]["units"]
+        ]
 
     def test_no_genai_client_means_no_embeddings(self):
         from db.parse_match_data import build_match_rows
@@ -372,6 +377,44 @@ class TestBuildMatchRows:
             (1, 0, "B"),
             (1, 1, "C"),
         ]
+
+
+class TestCompositionString:
+    def test_includes_star_and_items_and_omits_brackets_when_empty(self):
+        from google_embedding.embedding_call import composition_string
+
+        text = composition_string(
+            [("TFT16_Jinx", 2, ["B", "A"]), ("TFT16_Vi", 1, [])], ["T2", "T1"]
+        )
+
+        assert text == "TFT16_Jinx*2 [A, B], TFT16_Vi*1 | T1, T2"
+
+    def test_is_order_independent(self):
+        from google_embedding.embedding_call import composition_string
+
+        a = composition_string(
+            [("X", 1, ["i", "j"]), ("Y", 2, [])], ["t1", "t2"]
+        )
+        b = composition_string(
+            [("Y", 2, []), ("X", 1, ["j", "i"])], ["t2", "t1"]
+        )
+
+        assert a == b
+
+    def test_stars_and_items_change_the_text(self):
+        from google_embedding.embedding_call import composition_string
+
+        base = composition_string([("X", 1, ["i"])], ["t"])
+
+        assert composition_string([("X", 2, ["i"])], ["t"]) != base
+        assert composition_string([("X", 1, ["j"])], ["t"]) != base
+
+    def test_duplicate_champions_keep_their_own_token(self):
+        from google_embedding.embedding_call import composition_string
+
+        text = composition_string([("X", 1, []), ("X", 2, [])], [])
+
+        assert text == "X*1, X*2 | "
 
 
 class TestWriteMatches:
