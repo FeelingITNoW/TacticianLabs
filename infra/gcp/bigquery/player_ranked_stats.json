@@ -1,0 +1,10 @@
+[
+  {"name": "puuid", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "tier", "type": "STRING"},
+  {"name": "rank", "type": "STRING"},
+  {"name": "league_points", "type": "INT64"},
+  {"name": "wins", "type": "INT64"},
+  {"name": "losses", "type": "INT64"},
+  {"name": "hot_streak", "type": "BOOL"},
+  {"name": "updated_at", "type": "TIMESTAMP"}
+]

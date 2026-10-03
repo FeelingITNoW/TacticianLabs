@@ -1,97 +1,61 @@
-import os
-import time
-from dotenv import load_dotenv
-from google import genai
-from supabase import create_client, Client
+import json
+from datetime import datetime, timezone
 
+from google import genai
+from google.cloud import bigquery
+
+from db.bq import insert_from_staging_sql, run_query, staged, table_ref
+from db.upsert_players import merge_players_sql
 from google_embedding.embedding_call import get_embeddings
 from riot_api.constants import TFT_RANKED_QUEUE_ID
 
-load_dotenv()
+# Per-match tables, children first. write_match_rows replaces a match's rows in
+# all of them, and matches itself is handled separately (out first, in last).
+MATCH_CHILD_TABLES = (
+    "unit_items",
+    "participant_units",
+    "participant_traits",
+    "participants",
+)
 
 
-def _is_transient_supabase_error(exc: Exception) -> bool:
-    text = str(exc)
-    name = exc.__class__.__name__
-    return (
-        "RemoteProtocolError" in name
-        or "ConnectTimeout" in name
-        or "ReadTimeout" in name
-        or "ConnectionTerminated" in text
-        or "Server disconnected" in text
-        or "'code': 429" in text
-        or '"code": 429' in text
-        or "'code': 502" in text
-        or '"code": 502' in text
-        or "'code': 503" in text
-        or '"code": 503' in text
-        or "'code': 504" in text
-        or '"code": 504' in text
-        or "Bad gateway" in text
-        or "JSON could not be generated" in text
-    )
-
-
-def _execute_with_retry(builder, max_retries: int = 6):
-    delay = 0.5
-    for attempt in range(max_retries):
-        try:
-            return builder.execute()
-        except Exception as exc:
-            if attempt < max_retries - 1 and _is_transient_supabase_error(exc):
-                time.sleep(delay)
-                delay = min(delay * 2, 16)
-                continue
-            raise
-
-
-# Main function to parse match data and insert into database
-def parse_match_data(
+def build_match_rows(
     match_data: dict,
-    client: Client,
     latest_version: str,
-    google_genai_client: genai.Client,
-):
-    # If game is not ranked game, skip it
-    if match_data["info"]["queue_id"] != TFT_RANKED_QUEUE_ID:
-        print(
-            f"Skipping match {match_data['metadata']['match_id']} - not a ranked game (queue_id: {match_data['info']['queue_id']})"
-        )
-        return
+    google_genai_client: genai.Client | None,
+) -> dict[str, list[dict]] | None:
+    """Turn one Riot match payload into rows keyed by BigQuery table name.
 
-    # Fields needed for match table:
-    # - match_id (from file name)
-    # - tft_set_number
-    # - patch_number
-    # - region (from file name)
+    Returns None for anything that isn't a ranked game. Calls Gemini once to embed
+    every participant's board, or not at all when google_genai_client is None, in
+    which case the participant rows have no embedding.
+    """
+    info = match_data["info"]
     match_id = match_data["metadata"]["match_id"]
-    match_uuid = match_id
-    tft_set_number = match_data["info"]["tft_set_number"]
-    patch_number = latest_version
-    game_datetime = match_data["info"].get("game_datetime")
-    game_length = match_data["info"].get("game_length")
+    if info["queue_id"] != TFT_RANKED_QUEUE_ID:
+        print(
+            f"Skipping match {match_id} - not a ranked game (queue_id: {info['queue_id']})"
+        )
+        return None
 
-    # - match_id (from file name)
-    # player id
-    # placement
-    # level
-    participants = match_data["info"]["participants"]
+    # Match IDs are prefixed with the platform, e.g. "NA1_5123456789"
+    platform = match_id.split("_")[0]
+    # Riot sends epoch milliseconds. Every per-match table is partitioned on this.
+    played_at = datetime.fromtimestamp(
+        info["game_datetime"] / 1000, tz=timezone.utc
+    ).isoformat()
 
-    # Build all composition rows first, then upsert in a single batch flow.
     player_rows: list[dict] = []
     participant_rows: list[dict] = []
-    trait_rows: list[dict] = []
+    trait_rows: dict[tuple, dict] = {}
     unit_rows: list[dict] = []
+    unit_item_rows: list[dict] = []
     compositions: list[tuple[list[str], list[str]]] = []
-    # Match IDs are prefixed with the platform, e.g. "NA1_5123456789"
-    platform = match_uuid.split("_")[0]
-    for participant in participants:
-        match_id = match_uuid
+    for participant in info["participants"]:
         puuid = participant["puuid"]
-        participant_traits = []
-        participant_units = []
-        # participants.puuid has an FK to players, and lobbies include players
-        # outside the tiers we crawl, so every participant needs a players row.
+        keys = {"match_id": match_id, "puuid": puuid, "played_at": played_at}
+        # Lobbies include players outside the tiers we crawl, so every participant
+        # gets a players row (participants.puuid references players).
         player_rows.append(
             {
                 "puuid": puuid,
@@ -100,38 +64,9 @@ def parse_match_data(
                 "region": platform,
             }
         )
-        for trait in participant["traits"]:
-            trait_rows.append(
-                {
-                    "match_id": match_id,
-                    "puuid": puuid,
-                    "name": trait["name"],
-                    "tier_current": trait["tier_current"],
-                    "num_units": trait["num_units"],
-                    "style": trait["style"],
-                    "tier_total": trait["tier_total"],
-                }
-            )
-            participant_traits.append(trait["name"])
-
-        for unit in participant["units"]:
-            unit_rows.append(
-                {
-                    "match_id": match_id,
-                    "puuid": puuid,
-                    "character_id": unit["character_id"],
-                    "tier": unit["tier"],
-                    "item_names": unit["itemNames"],
-                    "rarity": unit["rarity"],
-                }
-            )
-            participant_units.append(unit["character_id"])
-        compositions.append((participant_units, participant_traits))
-
         participant_rows.append(
             {
-                "match_id": match_uuid,
-                "puuid": participant["puuid"],
+                **keys,
                 "placement": participant["placement"],
                 "level": participant["level"],
                 "gold_left": participant["gold_left"],
@@ -140,98 +75,140 @@ def parse_match_data(
             }
         )
 
+        for trait in participant["traits"]:
+            # Keyed on the primary key, which BigQuery records but doesn't enforce
+            trait_rows[(puuid, trait["name"])] = {
+                **keys,
+                "trait": trait["name"],
+                "num_units": trait["num_units"],
+                "style": trait["style"],
+                "tier_current": trait["tier_current"],
+                "tier_total": trait["tier_total"],
+            }
+
+        # slot is the unit's position on the board list, so two copies of the same
+        # champion stay separate rows.
+        for slot, unit in enumerate(participant["units"]):
+            unit_rows.append(
+                {
+                    **keys,
+                    "slot": slot,
+                    "champion": unit["character_id"],
+                    "star": unit["tier"],
+                    "rarity": unit["rarity"],
+                }
+            )
+            for item_index, item in enumerate(unit.get("itemNames", [])):
+                unit_item_rows.append(
+                    {**keys, "slot": slot, "item_index": item_index, "item": item}
+                )
+
+        compositions.append(
+            (
+                [unit["character_id"] for unit in participant["units"]],
+                [trait["name"] for trait in participant["traits"]],
+            )
+        )
+
     # One embedding request per match instead of one per participant
-    if participant_rows:
+    if participant_rows and google_genai_client is not None:
         embeddings = get_embeddings(google_genai_client, compositions)
         for row, embedding in zip(participant_rows, embeddings):
             row["embedding"] = embedding
 
-    # Deduplicate within batch to avoid ON CONFLICT affecting the same row twice
-    seen_traits: dict = {}
-    for row in trait_rows:
-        seen_traits[(row["match_id"], row["puuid"], row["name"])] = row
-    trait_rows = list(seen_traits.values())
-
-    seen_units: dict = {}
-    for row in unit_rows:
-        seen_units[(row["match_id"], row["puuid"], row["character_id"])] = row
-    unit_rows = list(seen_units.values())
-
-    match_table_entry = prepare_match_table(
-        tft_set_number, patch_number, client, match_uuid, game_datetime, game_length
-    )
-    # Upserts keep re-runs idempotent: the daily look-back window overlaps the previous run.
-    if player_rows:
-        _execute_with_retry(
-            client.table("players").upsert(player_rows, on_conflict="puuid")
-        )
-    if participant_rows:
-        _execute_with_retry(
-            client.table("participants").upsert(
-                participant_rows, on_conflict="match_id,puuid"
-            )
-        )
-    if trait_rows:
-        _execute_with_retry(
-            client.table("traits").upsert(trait_rows, on_conflict="match_id,puuid,name")
-        )
-    # units has a surrogate uuid key, so replace the match's rows rather than upsert
-    _execute_with_retry(client.table("units").delete().eq("match_id", match_uuid))
-    if unit_rows:
-        _execute_with_retry(client.table("units").insert(unit_rows))
-
     return {
-        "match_table_entry": match_table_entry,
-        "player_rows": player_rows,
-        "participant_rows": participant_rows,
-        "trait_rows": trait_rows,
-        "unit_rows": unit_rows,
+        "matches": [
+            {
+                "match_id": match_id,
+                "played_at": played_at,
+                "game_length": info.get("game_length"),
+                "game_version": latest_version,
+                "tft_set_number": info.get("tft_set_number"),
+                "queue_id": info["queue_id"],
+                "region": platform,
+            }
+        ],
+        "players": player_rows,
+        "participants": participant_rows,
+        "participant_traits": list(trait_rows.values()),
+        "participant_units": unit_rows,
+        "unit_items": unit_item_rows,
     }
 
 
-def prepare_match_table(
-    tft_set_number: int,
-    patch_number: float,
-    client: Client,
-    match_uuid: str,
-    datetime: int,
-    gamelength: float,
-):
-    match_entry = {
-        "tft_set_number": tft_set_number,
-        "game_version": patch_number,
-        "match_id": match_uuid,
-        "game_datetime": datetime,
-        "game_length": gamelength,
-    }
-    try:
-        _execute_with_retry(client.table("matches").upsert(match_entry))
-    except Exception as e:
-        # PostgreSQL duplicate key error code is 23505, if the match already exists in the database, we can skip it and move on to the next one
-        if "23505" in str(e):
-            # do nothing, the match already exists in the database
-            pass
-        else:
-            raise
+def write_match_rows(
+    client: bigquery.Client, batches: list[dict[str, list[dict]]]
+) -> None:
+    """Replace the given matches' rows in every per-match table and upsert players.
 
-    return match_entry
+    Idempotent, since the daily look-back windows overlap and a failed run is
+    retried. The matches row is deleted first and inserted last, so a run that
+    dies part-way leaves the match absent and filter_new_match_ids re-ingests it.
+    """
+    if not batches:
+        return
+    rows = {name: [row for batch in batches for row in batch[name]] for name in batches[0]}
+    match_ids = [row["match_id"] for row in rows["matches"]]
+    played = [datetime.fromisoformat(row["played_at"]) for row in rows["matches"]]
+    params = [
+        bigquery.ArrayQueryParameter("match_ids", "STRING", match_ids),
+        # Bounds the deletes to the partitions these matches live in
+        bigquery.ScalarQueryParameter("lo", "TIMESTAMP", min(played)),
+        bigquery.ScalarQueryParameter("hi", "TIMESTAMP", max(played)),
+    ]
 
-
-def filter_new_match_ids(
-    client: Client, match_ids: list[str], chunk_size: int = 100
-) -> list[str]:
-    """Drop match IDs that are already in the matches table."""
-    existing: set[str] = set()
-    for i in range(0, len(match_ids), chunk_size):
-        chunk = match_ids[i : i + chunk_size]
-        response = _execute_with_retry(
-            client.table("matches").select("match_id").in_("match_id", chunk)
+    def delete_sql(name: str) -> str:
+        return (
+            f"DELETE FROM `{table_ref(client, name)}`\n"
+            "WHERE match_id IN UNNEST(@match_ids) AND played_at BETWEEN @lo AND @hi;"
         )
-        existing.update(row["match_id"] for row in response.data)
+
+    with staged(client, rows) as staging:
+        statements = [delete_sql("matches")]
+        for name in MATCH_CHILD_TABLES:
+            statements.append(delete_sql(name))
+            if name in staging:
+                statements.append(insert_from_staging_sql(client, name, staging[name]))
+        statements.append(merge_players_sql(client, staging["players"]))
+        statements.append(insert_from_staging_sql(client, "matches", staging["matches"]))
+        run_query(client, "\n".join(statements), params)
+
+
+def write_matches(
+    client: bigquery.Client,
+    match_bodies: dict[str, str],
+    latest_version: str,
+    google_genai_client: genai.Client | None,
+) -> tuple[int, int]:
+    """Parse raw match JSON (match_id -> body) and write the batch in one round.
+
+    Returns (ingested, failed). A match that fails to parse is skipped and counted.
+    A failed write raises for the whole batch, which is safe to retry.
+    """
+    batches: list[dict[str, list[dict]]] = []
+    failed = 0
+    for match_id, body in match_bodies.items():
+        try:
+            rows = build_match_rows(json.loads(body), latest_version, google_genai_client)
+        except Exception as exc:
+            failed += 1
+            print(f"Failed to parse {match_id}: {exc!r}")
+            continue
+        if rows is not None:
+            batches.append(rows)
+    write_match_rows(client, batches)
+    return len(batches), failed
+
+
+def filter_new_match_ids(client: bigquery.Client, match_ids: list[str]) -> list[str]:
+    """Drop match IDs that are already in the matches table."""
+    if not match_ids:
+        return []
+    rows = run_query(
+        client,
+        f"SELECT match_id FROM `{table_ref(client, 'matches')}` "
+        "WHERE match_id IN UNNEST(@match_ids)",
+        [bigquery.ArrayQueryParameter("match_ids", "STRING", match_ids)],
+    )
+    existing = {row["match_id"] for row in rows}
     return [match_id for match_id in match_ids if match_id not in existing]
-
-
-if __name__ == "__main__":
-    url: str = os.environ.get("supabase_url")
-    key: str = os.environ.get("supabase_key")
-    supabase: Client = create_client(url, key)

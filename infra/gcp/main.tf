@@ -13,7 +13,6 @@ locals {
   # Env var name the job reads -> Secret Manager secret id.
   # Values are added out of band (gcloud secrets versions add) so they never land in tfstate.
   secret_env = {
-    supabase_key   = "supabase-key"
     GEMINI_API_KEY = "gemini-api-key"
     RIOT_API_KEY   = "riot-api-key"
   }
@@ -22,6 +21,7 @@ locals {
 resource "google_project_service" "apis" {
   for_each = toset([
     "artifactregistry.googleapis.com",
+    "bigquery.googleapis.com",
     "cloudbuild.googleapis.com",
     "cloudscheduler.googleapis.com",
     "developerconnect.googleapis.com",
@@ -33,7 +33,7 @@ resource "google_project_service" "apis" {
   disable_on_destroy = false
 }
 
-# --- Match archive (replaces the Backblaze B2 bucket in the repo-root main.tf) ---
+# --- Match archive ---
 
 resource "google_storage_bucket" "tft_match_data" {
   name                        = local.gcs_bucket_name
@@ -167,8 +167,18 @@ resource "google_cloud_run_v2_job" "ingest" {
         }
 
         env {
-          name  = "supabase_url"
-          value = var.supabase_url
+          name  = "GOOGLE_CLOUD_PROJECT"
+          value = var.project_id
+        }
+
+        env {
+          name  = "BQ_DATASET"
+          value = google_bigquery_dataset.tft.dataset_id
+        }
+
+        env {
+          name  = "BQ_STAGING_DATASET"
+          value = google_bigquery_dataset.tft_staging.dataset_id
         }
 
         env {
@@ -203,6 +213,8 @@ resource "google_cloud_run_v2_job" "ingest" {
   depends_on = [
     google_secret_manager_secret_iam_member.runner_access,
     google_storage_bucket_iam_member.runner_bucket_access,
+    google_bigquery_dataset_iam_member.runner_editor,
+    google_project_iam_member.runner_bigquery_jobs,
   ]
 }
 

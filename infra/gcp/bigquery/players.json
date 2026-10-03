@@ -1,0 +1,8 @@
+[
+  {"name": "puuid", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "game_name", "type": "STRING"},
+  {"name": "tag_line", "type": "STRING"},
+  {"name": "region", "type": "STRING", "description": "Platform, e.g. NA1"},
+  {"name": "created_at", "type": "TIMESTAMP"},
+  {"name": "updated_at", "type": "TIMESTAMP"}
+]

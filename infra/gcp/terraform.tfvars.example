@@ -1,7 +1,6 @@
 # Copy to terraform.tfvars (gitignored) and fill in.
 project_id   = "my-gcp-project"
 region       = "us-central1"
-supabase_url = "https://<ref>.supabase.co"
 
 # From: gcloud developer-connect connections git-repository-links list \
 #         --connection=<connection-name> --location=<connection-region> --format='value(name)'

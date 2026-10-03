@@ -1,0 +1,10 @@
+[
+  {"name": "match_id", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "puuid", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "played_at", "type": "TIMESTAMP", "mode": "REQUIRED"},
+  {"name": "trait", "type": "STRING", "mode": "REQUIRED", "description": "Riot api name, e.g. TFT16_Brawler"},
+  {"name": "num_units", "type": "INT64"},
+  {"name": "style", "type": "INT64"},
+  {"name": "tier_current", "type": "INT64"},
+  {"name": "tier_total", "type": "INT64"}
+]

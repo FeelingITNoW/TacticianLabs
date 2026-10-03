@@ -14,9 +14,10 @@ variable "git_repository_link" {
   description = "Developer Connect repo link, e.g. projects/<p>/locations/<region>/connections/<conn>/gitRepositoryLinks/<link>. Created once in the console (see README)."
 }
 
-variable "supabase_url" {
+variable "bigquery_dataset" {
   type        = string
-  description = "Supabase project URL (not a secret)."
+  default     = "tft"
+  description = "Dataset holding the match tables. A \"<name>_staging\" dataset is created next to it."
 }
 
 variable "schedule" {

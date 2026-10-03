@@ -14,3 +14,7 @@ output "secret_ids" {
 output "gcs_bucket" {
   value = google_storage_bucket.tft_match_data.name
 }
+
+output "bigquery_dataset" {
+  value = google_bigquery_dataset.tft.dataset_id
+}
