@@ -21,3 +21,19 @@ jobs:
           docker run --rm \
             -e GEMINI_API_KEY=ci-dummy -e RIOT_API_KEY=ci-dummy \
             clone-tools-ci python -m pytest tests -v -m "not integration"
+
+  astro-pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Astro CLI
+        run: curl -sSL install.astronomer.io | sudo bash -s
+
+      # .env is gitignored; astro dev pytest passes it into the container.
+      - name: Write dummy env file
+        run: |
+          printf 'GEMINI_API_KEY=ci-dummy\nRIOT_API_KEY=ci-dummy\n' > .env
+
+      - name: Run astro dev pytest
+        run: astro dev pytest --docker --args "-v -m 'not integration'"
