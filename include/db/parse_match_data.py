@@ -6,7 +6,7 @@ from google.cloud import bigquery
 
 from db.bq import insert_from_staging_sql, run_query, staged, table_ref
 from db.upsert_players import merge_players_sql
-from google_embedding.embedding_call import get_embeddings
+from google_embedding.embedding_call import Unit, get_embeddings
 from riot_api.constants import TFT_RANKED_QUEUE_ID
 
 # Per-match tables, children first. write_match_rows replaces a match's rows in
@@ -27,7 +27,7 @@ def build_match_rows(
     """Turn one Riot match payload into rows keyed by BigQuery table name.
 
     Returns None for anything that isn't a ranked game. Calls Gemini once to embed
-    every participant's board, or not at all when google_genai_client is None, in
+    every participant's board (units with star level and items, plus traits), or not at all when google_genai_client is None, in
     which case the participant rows have no embedding.
     """
     info = match_data["info"]
@@ -50,7 +50,7 @@ def build_match_rows(
     trait_rows: dict[tuple, dict] = {}
     unit_rows: list[dict] = []
     unit_item_rows: list[dict] = []
-    compositions: list[tuple[list[str], list[str]]] = []
+    compositions: list[tuple[list[Unit], list[str]]] = []
     for participant in info["participants"]:
         puuid = participant["puuid"]
         keys = {"match_id": match_id, "puuid": puuid, "played_at": played_at}
@@ -105,7 +105,10 @@ def build_match_rows(
 
         compositions.append(
             (
-                [unit["character_id"] for unit in participant["units"]],
+                [
+                    (unit["character_id"], unit["tier"], unit.get("itemNames", []))
+                    for unit in participant["units"]
+                ],
                 [trait["name"] for trait in participant["traits"]],
             )
         )

@@ -6,10 +6,13 @@ from google.genai import errors, types
 EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIMENSIONS = 768
 
+# (champion api name, star level, item api names)
+Unit = tuple[str, int, list[str]]
+
 
 def get_embeddings(
     client: genai.Client,
-    compositions: list[tuple[list[str], list[str]]],
+    compositions: list[tuple[list[Unit], list[str]]],
     max_retries: int = 5,
 ) -> list[list[float]]:
     """Embed several (units, traits) compositions in a single request.
@@ -43,13 +46,23 @@ def get_embeddings(
     raise RuntimeError(f"All {max_retries} embedding retries exhausted")
 
 
-def get_embedding(api_key: str, participant_units: list, participant_traits: list):
+def get_embedding(
+    api_key: str, participant_units: list[Unit], participant_traits: list[str]
+):
     client = genai.Client(api_key=api_key)
     return get_embeddings(client, [(participant_units, participant_traits)])[0]
 
 
-def composition_string(units: list[str], traits: list[str]) -> str:
-    return ", ".join(sorted(units)) + " | " + ", ".join(sorted(traits))
+def unit_string(champion: str, star: int, items: list[str]) -> str:
+    text = f"{champion}*{star}"
+    if items:
+        text += f" [{', '.join(sorted(items))}]"
+    return text
+
+
+def composition_string(units: list[Unit], traits: list[str]) -> str:
+    unit_text = ", ".join(sorted(unit_string(*unit) for unit in units))
+    return unit_text + " | " + ", ".join(sorted(traits))
 
 
 # We are using the clustering task
