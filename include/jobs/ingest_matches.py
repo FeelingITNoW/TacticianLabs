@@ -23,8 +23,8 @@ from riot_api.constants import (
     HIGH_ELO_TIERS,
     RIOT_REGIONS,
     RIOT_REGIONS_MAP,
-    RIOT_VERSIONS_URL,
 )
+from riot_api.http_client import get_latest_version
 from riot_api.match_api import collect_match_ids, collect_matches
 
 CHUNK_SIZE = 50
@@ -141,7 +141,7 @@ async def main() -> int:
 
     failures = 0
     async with httpx.AsyncClient() as http_client:
-        latest_version = (await http_client.get(RIOT_VERSIONS_URL)).json()[0]
+        latest_version = await get_latest_version(http_client)
         for routing, platforms in groups.items():
             failures += await ingest_routing_group(
                 http_client,

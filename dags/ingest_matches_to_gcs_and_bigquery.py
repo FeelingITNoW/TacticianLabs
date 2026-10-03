@@ -9,6 +9,7 @@ from db.parse_match_data import write_matches
 from google import genai
 from riot_api.match_api import collect_match_ids, collect_matches
 from riot_api.constants import RIOT_REGIONS, HIGH_ELO_TIERS
+from riot_api.http_client import get_latest_version
 
 # Matches per BigQuery write: one staging round and one SQL script each
 WRITE_CHUNK_SIZE = 50
@@ -61,17 +62,13 @@ def ingest_matches_to_gcs_and_bigquery():
         hook = GCSHook(gcp_conn_id="google_cloud_default")
         storage_client = hook.get_conn()
         async with httpx.AsyncClient() as async_client:
-            riot_versions = (
-                await async_client.get(
-                    "https://ddragon.leagueoflegends.com/api/versions.json"
-                )
-            ).json()
-            await upload_matches(
-                match_data=match_data,
-                storage_client=storage_client,
-                bucket_name=os.environ.get("GCS_BUCKET", "tft-match-data"),
-                riot_version=riot_versions[0],
-            )
+            riot_version = await get_latest_version(async_client)
+        await upload_matches(
+            match_data=match_data,
+            storage_client=storage_client,
+            bucket_name=os.environ.get("GCS_BUCKET", "tft-match-data"),
+            riot_version=riot_version,
+        )
 
     @task
     async def upsert_players_task() -> None:
@@ -91,12 +88,7 @@ def ingest_matches_to_gcs_and_bigquery():
         import os
 
         async with httpx.AsyncClient() as async_client:
-            riot_versions = (
-                await async_client.get(
-                    "https://ddragon.leagueoflegends.com/api/versions.json"
-                )
-            ).json()
-            latest_version = riot_versions[0]
+            latest_version = await get_latest_version(async_client)
 
         bigquery_client = _bigquery_client()
         google_genai_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
