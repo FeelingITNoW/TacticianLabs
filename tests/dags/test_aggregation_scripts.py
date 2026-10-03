@@ -71,7 +71,15 @@ class TestStatsSqlCompiles:
     def test_dry_run(self, stats_table):
         from google.cloud import bigquery
 
+        import google.auth
+        from google.auth.exceptions import DefaultCredentialsError
+
         from db.bq import column_names, make_client
+
+        try:
+            google.auth.default()
+        except DefaultCredentialsError:
+            pytest.skip("no Google Application Default Credentials")
 
         client = make_client()
         job = client.query(

@@ -327,6 +327,16 @@ class TestBuildMatchRows:
         assert len(compositions) == len(match_data["info"]["participants"])
         assert all(len(row["embedding"]) == 768 for row in rows["participants"])
 
+    def test_no_genai_client_means_no_embeddings(self):
+        from db.parse_match_data import build_match_rows
+
+        with patch("db.parse_match_data.get_embeddings") as mock_embed:
+            rows = build_match_rows(make_match_data_ranked_game(), "14.1.1", None)
+
+        mock_embed.assert_not_called()
+        assert rows["participants"]
+        assert all("embedding" not in row for row in rows["participants"])
+
     def test_players_row_for_every_participant(self):
         match_data = make_match_data_ranked_game()
         rows, _ = _build()

@@ -37,10 +37,12 @@ The match archive lives in `google_storage_bucket.tft_match_data` here; the job 
    ```
    `riot-api-key` must be a **Personal** (or Production) key. Development keys expire after 24 hours, so a daily job using one would start failing the next day.
 
-3. **Seed the reference tables** (needs `gcloud auth application-default login`):
+3. **Seed the default data** (needs `gcloud auth application-default login`): Set 18 reference tables plus the matches archived under `tft/matches/16.19.1/2026-09-28/`.
    ```sh
-   GOOGLE_CLOUD_PROJECT=<project_id> PYTHONPATH=include python -m db.seed_tft16_reference_data
+   GOOGLE_CLOUD_PROJECT=<project_id> PYTHONPATH=include python -m db.seed_default_data --limit 20 --skip-embeddings   # quick check
+   GOOGLE_CLOUD_PROJECT=<project_id> GEMINI_API_KEY=... PYTHONPATH=include python -m db.seed_default_data              # full: 2,700 matches, one Gemini call each
    ```
+   `python -m jobs.load_gcs_matches --prefix tft/matches/<version>/<date>/` loads any other archived day.
 
 4. **Build the first image.** Terraform creates the job with a placeholder image. Either push to `main`, or run:
    ```sh

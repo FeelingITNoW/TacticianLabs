@@ -22,7 +22,9 @@ Airflow runs through the Astro CLI in Docker (`Dockerfile` = Astro Runtime 3.1, 
 
 BigQuery:
 - `cd infra/gcp && terraform apply`: create/alter datasets and tables
-- `PYTHONPATH=include python -m db.seed_tft16_reference_data`: fill `champions`/`traits`/`items` from the root `tft-*.json` files
+- `PYTHONPATH=include python -m db.seed_default_data [--skip-embeddings] [--limit N]`: the default dataset. It seeds Set 18 reference data, then loads the matches archived under `tft/matches/16.19.1/2026-09-28/` in GCS. Idempotent, so it doubles as a reset.
+- `PYTHONPATH=include python -m db.seed_reference_data`: only `champions`/`traits`/`items`, from the root `tft-*.json` files (Data Dragon 16.19.1)
+- `PYTHONPATH=include python -m jobs.load_gcs_matches --prefix tft/matches/<version>/<date>/ [--reload] [--skip-embeddings]`: load any archived day into BigQuery; skips matches already loaded
 - Local runs use Application Default Credentials (`gcloud auth application-default login`); set `GOOGLE_CLOUD_PROJECT`, and `BQ_DATASET` if it isn't `tft`
 
 Supabase (local, frontend only until it moves off): `npx supabase start`, `npx supabase db reset`.
@@ -46,7 +48,7 @@ Host-side Python uses uv (`pyproject.toml`, Python 3.14, deps in the `dev` group
 
 **Parsing (`include/db/parse_match_data.py`).** `build_match_rows` is pure apart from the Gemini call: it skips anything that isn't ranked (`queue_id != 1100`) and returns rows keyed by table for `matches`, `players`, `participants` (with a 768-dim `gemini-embedding-001` embedding, one batched `get_embeddings` call per match), `participant_traits`, `participant_units` (keyed on `slot`, the unit's index on the board, so duplicate champions survive) and `unit_items`. `write_matches` parses a batch and `write_match_rows` replaces those matches in one script: delete `matches` first, delete-then-insert each child table, MERGE `players`, insert `matches` last, so a crash part-way leaves the match absent and it is re-ingested. `filter_new_match_ids` skips already-ingested matches before fetching.
 
-**Stats (`calculate_tft_stats` DAG + `include/data_aggregation/`).** One task per stats table (`champion_stats`, `trait_stats`, `item_stats`), each rebuilding the whole table per `(patch, api_name)` in a single transaction. A board counts once per entity however many copies it holds; rates are over boards, `play_rate` over all boards in the patch, and `patch` is `matches.game_version`. Reference tables `champions`/`traits`/`items` are keyed on Riot's api name (e.g. `TFT_Item_BFSword`) and filled by `include/db/seed_tft16_reference_data.py` (Set 16 only for champions/traits).
+**Stats (`calculate_tft_stats` DAG + `include/data_aggregation/`).** One task per stats table (`champion_stats`, `trait_stats`, `item_stats`), each rebuilding the whole table per `(patch, api_name)` in a single transaction. A board counts once per entity however many copies it holds; rates are over boards, `play_rate` over all boards in the patch, and `patch` is `matches.game_version`. Reference tables `champions`/`traits`/`items` are keyed on Riot's api name (e.g. `TFT_Item_BFSword`) and filled by `include/db/seed_reference_data.py`. Set 18 api names start with `DA_` (e.g. `DA_18_KhaZix`, `DA_ArchangelsStaff`), which is what the seed filters on; update `TFT_SET`/`SET_ID_PREFIX` and the root `tft-*.json` for a new set.
 
 **Config/secrets.** DAGs read `GEMINI_API_KEY` and `RIOT_API_KEY` (or `API_KEY`) from `.env`, plus optional `BQ_DATASET`/`BQ_STAGING_DATASET` (default `tft`/`tft_staging`). GCS and BigQuery are both accessed through the Airflow connection `google_cloud_default`, defined in `airflow_settings.yaml` (gitignored) with a service account keyfile; that account needs BigQuery Job User on the project and Data Editor on both datasets. The Cloud Run job instead uses its runtime service account's default credentials (granted in `infra/gcp/bigquery.tf`), no key needed.
 

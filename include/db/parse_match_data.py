@@ -22,12 +22,13 @@ MATCH_CHILD_TABLES = (
 def build_match_rows(
     match_data: dict,
     latest_version: str,
-    google_genai_client: genai.Client,
+    google_genai_client: genai.Client | None,
 ) -> dict[str, list[dict]] | None:
     """Turn one Riot match payload into rows keyed by BigQuery table name.
 
     Returns None for anything that isn't a ranked game. Calls Gemini once to embed
-    every participant's board.
+    every participant's board, or not at all when google_genai_client is None, in
+    which case the participant rows have no embedding.
     """
     info = match_data["info"]
     match_id = match_data["metadata"]["match_id"]
@@ -110,7 +111,7 @@ def build_match_rows(
         )
 
     # One embedding request per match instead of one per participant
-    if participant_rows:
+    if participant_rows and google_genai_client is not None:
         embeddings = get_embeddings(google_genai_client, compositions)
         for row, embedding in zip(participant_rows, embeddings):
             row["embedding"] = embedding
@@ -177,7 +178,7 @@ def write_matches(
     client: bigquery.Client,
     match_bodies: dict[str, str],
     latest_version: str,
-    google_genai_client: genai.Client,
+    google_genai_client: genai.Client | None,
 ) -> tuple[int, int]:
     """Parse raw match JSON (match_id -> body) and write the batch in one round.
 
