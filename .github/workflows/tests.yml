@@ -36,4 +36,6 @@ jobs:
           printf 'GEMINI_API_KEY=ci-dummy\nRIOT_API_KEY=ci-dummy\n' > .env
 
       - name: Run astro dev pytest
-        run: astro dev pytest --docker --args "-v -m 'not integration'"
+        # astro splits --args on whitespace and ignores inner quotes, so the
+        # marker expression is written without a space: not(integration).
+        run: astro dev pytest --docker --args "-v -m not(integration)"
