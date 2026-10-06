@@ -19,6 +19,7 @@ from db.bq import make_client
 from db.parse_match_data import filter_new_match_ids, write_matches
 from db.upsert_players import upsert_high_elo_players
 from gcs_bucket_api.upload_to_bucket import upload_matches
+from google_embedding.embedding_call import make_genai_client
 from riot_api.constants import (
     HIGH_ELO_TIERS,
     RIOT_REGIONS,
@@ -72,7 +73,7 @@ def make_storage_client():
 async def ingest_routing_group(
     http_client: httpx.AsyncClient,
     db_client: bigquery.Client,
-    genai_client: genai.Client,
+    genai_client: genai.Client | None,
     storage_client,
     routing: str,
     platforms: list[str],
@@ -136,7 +137,7 @@ async def main() -> int:
 
     max_matches = int(os.environ["MAX_MATCHES"]) if os.getenv("MAX_MATCHES") else None
     db_client = make_client()
-    genai_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    genai_client = make_genai_client()
     storage_client = make_storage_client()
 
     failures = 0

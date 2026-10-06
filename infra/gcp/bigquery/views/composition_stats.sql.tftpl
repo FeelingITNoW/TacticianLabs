@@ -1,0 +1,22 @@
+-- Rates for one comp per patch, derived from exact integer counters (same definitions as entity_stats).
+--   play_rate: boards per match that had the comp, so 1 <= x <= 8
+--   frequency: boards per match in the whole patch, so 0 <= x <= 8
+-- Boards that matched no comp (off-meta) are in patch_totals but in no row here.
+SELECT
+  c.patch,
+  c.comp_id,
+  c.label,
+  c.boards AS games,
+  SAFE_DIVIDE(c.win_count, c.boards) AS win_rate,
+  SAFE_DIVIDE(c.top4_count, c.boards) AS top4_rate,
+  SAFE_DIVIDE(c.placement_sum, c.boards) AS average_placement,
+  SAFE_DIVIDE(c.boards, c.matches) AS play_rate,
+  SAFE_DIVIDE(c.boards, p.matches) AS frequency,
+  c.matches,
+  c.units,
+  c.traits,
+  c.carries,
+  c.sample_size,
+  c.clustered_at
+FROM `${project}.${dataset}.compositions` AS c
+JOIN `${project}.${dataset}.patch_totals` AS p USING (patch)

@@ -2,6 +2,7 @@
 
 import pytest
 
+from google_embedding.embedding_call import make_genai_client
 from jobs.ingest_matches import groups_for_task, groups_from_env, routing_groups
 from riot_api.constants import RIOT_REGIONS, RIOT_REGIONS_MAP
 
@@ -32,3 +33,23 @@ class TestSharding:
         monkeypatch.setenv("REGIONS", "MARS1")
         with pytest.raises(ValueError, match="MARS1"):
             groups_from_env()
+
+
+class TestEmbeddingSwitch:
+    def test_skip_embeddings_means_no_client_and_no_api_key(self, monkeypatch):
+        monkeypatch.setenv("SKIP_EMBEDDINGS", "1")
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+        assert make_genai_client() is None
+
+    def test_embeddings_are_on_by_default(self, monkeypatch):
+        monkeypatch.delenv("SKIP_EMBEDDINGS", raising=False)
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        assert make_genai_client() is not None
+
+    def test_other_values_keep_embeddings_on(self, monkeypatch):
+        monkeypatch.setenv("SKIP_EMBEDDINGS", "0")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        assert make_genai_client() is not None

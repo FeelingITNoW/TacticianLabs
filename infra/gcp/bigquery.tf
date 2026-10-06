@@ -30,6 +30,12 @@ locals {
       partition_field = null
       clustering      = null
     }
+    compositions = {
+      description     = "Per-patch comps found by clustering board vectors (include/data_aggregation/compositions.py), with exact counters over every assigned board. Read through the composition_stats view."
+      primary_key     = ["patch", "comp_id"]
+      partition_field = null
+      clustering      = null
+    }
     champions = {
       description     = "Set reference data from tft-champion.json, keyed by Riot api name."
       primary_key     = ["api_name"]
@@ -98,6 +104,13 @@ locals {
         { column = "item", table = "items", references = "api_name" },
       ]
     }
+    participant_compositions = {
+      description     = "The comp each board was assigned to; boards that fit no comp have no row. (patch, comp_id) references compositions, (match_id, puuid) references participants."
+      primary_key     = ["match_id", "puuid"]
+      partition_field = "played_at"
+      clustering      = ["patch", "comp_id"]
+      foreign_keys    = [{ column = "match_id", table = "matches", references = "match_id" }]
+    }
     champion_totals = {
       description     = "Cumulative per-patch counters per champion, added to by every ingest write (include/data_aggregation). Read through the champion_stats view."
       primary_key     = ["patch", "api_name"]
@@ -154,6 +167,11 @@ locals {
       vars        = {}
       description = "Per-patch stats for each champion + item combo derived from champion_item_totals."
     }
+    composition_stats = {
+      file        = "composition_stats.sql.tftpl"
+      vars        = {}
+      description = "Per-patch comp stats derived from the compositions counters."
+    }
   }
 
   # What dashboards and LLM queries read: the latest patch only, with display names.
@@ -173,6 +191,10 @@ locals {
     current_champion_item_stats = {
       file        = "current_champion_item_stats.sql.tftpl"
       description = "champion_item_stats for the latest patch, with names."
+    }
+    current_composition_stats = {
+      file        = "current_composition_stats.sql.tftpl"
+      description = "composition_stats for the latest patch."
     }
   }
 }

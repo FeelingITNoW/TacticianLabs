@@ -7,6 +7,8 @@ GitHub push ─▶ Developer Connect ─▶ Cloud Build (cloudbuild.yaml) ─▶
                                                                    └▶ gcloud run jobs update
 Cloud Scheduler (06:00 UTC) ─▶ Cloud Run Job tft-ingest (4 tasks: AMERICAS / ASIA / EUROPE / SEA)
                                   └▶ Riot API ─▶ GCS (raw JSON) + BigQuery `tft` (parsed rows + Gemini embeddings)
+Cloud Scheduler (10:00 UTC) ─▶ Cloud Run Job tft-cluster-compositions (same image)
+                                  └▶ BigQuery `tft`: board vectors ─▶ comps + board assignments
 ```
 
 The match archive lives in `google_storage_bucket.tft_match_data` here; the job authenticates to it with the `tft-ingest-runner` service account's default credentials, no key needed.
@@ -84,6 +86,22 @@ PYTHONPATH=include python -m jobs.rebuild_stats          # backfill the totals f
 PYTHONPATH=include python -m jobs.rebuild_stats --check  # should report 0 mismatches
 ```
 Run the backfill before the next ingest. Until it runs, the first write for a patch would start that patch's totals from only the new matches, and `rebuild_stats` would then correct it.
+
+### Embeddings
+
+The ingest job runs with `SKIP_EMBEDDINGS=1` (Terraform variable `skip_embeddings`, default `true`): it writes `participants` rows with an empty `embedding` and never calls Gemini, since nothing reads the embeddings yet and comp clustering uses its own vectors. To turn them back on, set `skip_embeddings = false` and apply. To fill in the gaps, run `python -m jobs.load_gcs_matches --prefix tft/matches/<version>/<date>/ --reload` for each day, which re-embeds from the GCS archive. The `GEMINI_API_KEY` secret stays in place so that switch is all it takes.
+
+### Compositions
+
+`compositions` and `participant_compositions` hold the comps found in each patch and the comp each board was assigned to (boards that fit none have no row). They are rewritten per patch by a second Cloud Run Job, `tft-cluster-compositions` (`include/jobs/cluster_compositions.py`), which runs from the same image as the ingest (cloudbuild.yaml deploys both) at 10:00 UTC, after the ingest's 3 hour timeout. It is separate because it needs the whole patch, while the ingest is split into per-region tasks. It has 2 vCPU and 4Gi, since it holds the patch's boards in memory (as sparse matrices) and fits HDBSCAN on a 20k-board sample. The `composition_stats` view derives the rates and `current_composition_stats` restricts it to the latest patch.
+
+After the first `terraform apply`, and whenever you want to tune the clustering:
+```sh
+PYTHONPATH=include python -m jobs.cluster_compositions --dry-run   # print the comps, write nothing
+PYTHONPATH=include python -m jobs.cluster_compositions             # write them
+gcloud run jobs execute tft-cluster-compositions --region=us-central1 --wait
+```
+Until the first Cloud Build run the job still points at Google's placeholder image, so executing it fails.
 
 ## Cost notes
 

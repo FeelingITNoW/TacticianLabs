@@ -1,3 +1,4 @@
+import os
 import time
 
 from google import genai
@@ -5,6 +6,18 @@ from google.genai import errors, types
 
 EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIMENSIONS = 768
+
+def make_genai_client() -> genai.Client | None:
+    """The Gemini client for ingest, or None when SKIP_EMBEDDINGS=1.
+
+    With None, participants are written without an embedding and Gemini is never
+    called, so GEMINI_API_KEY isn't read. Backfill later with
+    `jobs.load_gcs_matches --reload`.
+    """
+    if os.getenv("SKIP_EMBEDDINGS") == "1":
+        return None
+    return genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+
 
 # (champion api name, star level, item api names)
 Unit = tuple[str, int, list[str]]

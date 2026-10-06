@@ -2,6 +2,10 @@ output "job_name" {
   value = google_cloud_run_v2_job.ingest.name
 }
 
+output "cluster_job_name" {
+  value = google_cloud_run_v2_job.cluster_compositions.name
+}
+
 output "image_repository" {
   value = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.tft.repository_id}/ingest"
 }

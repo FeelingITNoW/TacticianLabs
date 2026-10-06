@@ -26,6 +26,18 @@ variable "schedule" {
   description = "Cron (UTC) for the daily ingest run."
 }
 
+variable "skip_embeddings" {
+  type        = bool
+  default     = true
+  description = "Skip the per-board Gemini embedding at ingest (participants.embedding stays empty). Nothing reads the embeddings yet, and `python -m jobs.load_gcs_matches --reload` backfills them from the GCS archive. Set false to embed again."
+}
+
+variable "cluster_schedule" {
+  type        = string
+  default     = "0 10 * * *"
+  description = "Cron (UTC) for the daily composition clustering, which should start after the ingest has finished (06:00 plus up to 3 hours)."
+}
+
 variable "developer_connect_region" {
   type        = string
   default     = null
