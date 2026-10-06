@@ -451,12 +451,31 @@ class TestWriteMatches:
 
         (sql, _), = fake_bq.queries
         statements = [s.strip() for s in sql.split(";") if s.strip()]
-        assert statements[0].startswith("DELETE FROM `test-project.tft.matches`")
-        assert statements[-1].startswith("INSERT INTO `test-project.tft.matches`")
+        deletes = [s for s in statements if s.startswith("DELETE")]
+        assert deletes[0].startswith("DELETE FROM `test-project.tft.matches`")
+        assert statements[-2].startswith("INSERT INTO `test-project.tft.matches`")
         for table in ("participants", "participant_traits", "participant_units", "unit_items"):
             assert f"DELETE FROM `test-project.tft.{table}`" in sql
             assert f"INSERT INTO `test-project.tft.{table}`" in sql
         assert "MERGE `test-project.tft.players`" in sql
+
+    def test_is_one_transaction(self, fake_bq):
+        _write(fake_bq, {"m": json.dumps(make_match_data_ranked_game())})
+
+        (sql, _), = fake_bq.queries
+        statements = [s.strip() for s in sql.split(";") if s.strip()]
+        assert statements[0] == "BEGIN TRANSACTION"
+        assert statements[-1] == "COMMIT TRANSACTION"
+
+    def test_totals_are_updated_before_the_rows_they_read_are_deleted(self, fake_bq):
+        from data_aggregation.data_aggregation import TOTALS
+
+        _write(fake_bq, {"m": json.dumps(make_match_data_ranked_game())})
+
+        (sql, _), = fake_bq.queries
+        first_delete = sql.index("DELETE FROM")
+        for table in TOTALS:
+            assert 0 < sql.index(f"MERGE `test-project.tft.{table}`") < first_delete
 
     def test_deletes_are_bounded_by_match_ids_and_dates(self, fake_bq):
         _write(fake_bq, {"m": json.dumps(make_match_data_ranked_game())})

@@ -1,0 +1,16 @@
+-- Rates for one entity per patch, derived from exact integer counters.
+--   play_rate: boards per match that had the entity, so 1 <= x <= 8
+--   frequency: boards per match in the whole patch, so 0 <= x <= 8
+SELECT
+  c.patch,
+  c.api_name,
+  c.boards AS games,
+  SAFE_DIVIDE(c.win_count, c.boards) AS win_rate,
+  SAFE_DIVIDE(c.top4_count, c.boards) AS top4_rate,
+  SAFE_DIVIDE(c.placement_sum, c.boards) AS average_placement,
+  SAFE_DIVIDE(c.boards, c.matches) AS play_rate,
+  SAFE_DIVIDE(c.boards, p.matches) AS frequency,
+  c.matches,
+  c.updated_at
+FROM `${project}.${dataset}.${totals}` AS c
+JOIN `${project}.${dataset}.patch_totals` AS p USING (patch)

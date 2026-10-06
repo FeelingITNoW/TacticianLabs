@@ -1,0 +1,4 @@
+SELECT s.*, r.name
+FROM `${project}.${dataset}.item_stats` AS s
+LEFT JOIN `${project}.${dataset}.items` AS r ON r.api_name = s.api_name
+WHERE s.patch = (SELECT patch FROM `${project}.${dataset}.patch_totals` ORDER BY last_played_at DESC LIMIT 1)

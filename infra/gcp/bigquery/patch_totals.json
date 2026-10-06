@@ -1,0 +1,7 @@
+[
+  {"name": "patch", "type": "STRING", "mode": "REQUIRED", "description": "matches.game_version"},
+  {"name": "matches", "type": "INT64", "mode": "REQUIRED", "description": "Ranked matches ingested in the patch"},
+  {"name": "boards", "type": "INT64", "mode": "REQUIRED", "description": "Participants in those matches (8 per match)"},
+  {"name": "last_played_at", "type": "TIMESTAMP", "description": "Newest match in the patch; the latest patch is the one with the newest value"},
+  {"name": "updated_at", "type": "TIMESTAMP"}
+]

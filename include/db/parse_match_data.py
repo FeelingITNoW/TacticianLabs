@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from google import genai
 from google.cloud import bigquery
 
+from data_aggregation.data_aggregation import merge_totals_sql
 from db.bq import insert_from_staging_sql, run_query, staged, table_ref
 from db.upsert_players import merge_players_sql
 from google_embedding.embedding_call import Unit, get_embeddings
@@ -142,11 +143,14 @@ def build_match_rows(
 def write_match_rows(
     client: bigquery.Client, batches: list[dict[str, list[dict]]]
 ) -> None:
-    """Replace the given matches' rows in every per-match table and upsert players.
+    """Replace the given matches' rows in every per-match table, upsert players and
+    fold the matches into the per-patch totals.
 
     Idempotent, since the daily look-back windows overlap and a failed run is
-    retried. The matches row is deleted first and inserted last, so a run that
-    dies part-way leaves the match absent and filter_new_match_ids re-ingests it.
+    retried. The whole script is one transaction, so the totals can't be bumped
+    without the matches landing (which would double count on the retry). The
+    totals come first because they subtract the rows the deletes then remove.
+    The matches row is deleted first and inserted last among the writes.
     """
     if not batches:
         return
@@ -167,14 +171,15 @@ def write_match_rows(
         )
 
     with staged(client, rows) as staging:
-        statements = [delete_sql("matches")]
+        statements = [*merge_totals_sql(client, staging), delete_sql("matches")]
         for name in MATCH_CHILD_TABLES:
             statements.append(delete_sql(name))
             if name in staging:
                 statements.append(insert_from_staging_sql(client, name, staging[name]))
         statements.append(merge_players_sql(client, staging["players"]))
         statements.append(insert_from_staging_sql(client, "matches", staging["matches"]))
-        run_query(client, "\n".join(statements), params)
+        script = "\n".join(["BEGIN TRANSACTION;", *statements, "COMMIT TRANSACTION;"])
+        run_query(client, script, params)
 
 
 def write_matches(

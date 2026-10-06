@@ -1,0 +1,5 @@
+SELECT s.*, ch.name AS champion_name, i.name AS item_name
+FROM `${project}.${dataset}.champion_item_stats` AS s
+LEFT JOIN `${project}.${dataset}.champions` AS ch ON ch.api_name = s.champion
+LEFT JOIN `${project}.${dataset}.items` AS i ON i.api_name = s.item
+WHERE s.patch = (SELECT patch FROM `${project}.${dataset}.patch_totals` ORDER BY last_played_at DESC LIMIT 1)
