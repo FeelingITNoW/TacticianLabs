@@ -1,10 +1,11 @@
-# Builds the ingest job image and points the Cloud Run Job at it.
+# Builds the job image and points both Cloud Run Jobs (ingest and composition clustering) at it.
 # Run by the Developer Connect trigger defined in infra/gcp/cloudbuild.tf.
 # Manual run: gcloud builds submit --config cloudbuild.yaml --substitutions=SHORT_SHA=manual
 substitutions:
   _REGION: us-central1
   _REPOSITORY: tft
   _JOB: tft-ingest
+  _CLUSTER_JOB: tft-cluster-compositions
   _IMAGE: ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/ingest
 
 steps:
@@ -32,6 +33,17 @@ steps:
       - jobs
       - update
       - ${_JOB}
+      - --image=${_IMAGE}:${SHORT_SHA}
+      - --region=${_REGION}
+
+  - id: deploy-cluster
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - update
+      - ${_CLUSTER_JOB}
       - --image=${_IMAGE}:${SHORT_SHA}
       - --region=${_REGION}
 

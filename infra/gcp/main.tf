@@ -1,5 +1,6 @@
 locals {
-  job_name = "tft-ingest"
+  job_name         = "tft-ingest"
+  cluster_job_name = "tft-cluster-compositions"
 
   # GCS bucket names are globally unique across all of GCP, so default to
   # something project-scoped unless the caller picks their own.
@@ -186,6 +187,11 @@ resource "google_cloud_run_v2_job" "ingest" {
           value = google_storage_bucket.tft_match_data.name
         }
 
+        env {
+          name  = "SKIP_EMBEDDINGS"
+          value = var.skip_embeddings ? "1" : "0"
+        }
+
         dynamic "env" {
           for_each = local.secret_env
           content {
@@ -218,6 +224,67 @@ resource "google_cloud_run_v2_job" "ingest" {
   ]
 }
 
+# Clusters a patch's boards into comps (include/jobs/cluster_compositions.py). Separate from
+# the ingest because it needs the whole patch, while ingest runs as per-region tasks.
+# Same image as the ingest job; cloudbuild.yaml deploys both.
+resource "google_cloud_run_v2_job" "cluster_compositions" {
+  name                = local.cluster_job_name
+  location            = var.region
+  deletion_protection = false
+
+  template {
+    task_count = 1
+
+    template {
+      service_account = google_service_account.runner.email
+      timeout         = "3600s"
+      max_retries     = 1
+
+      containers {
+        # Placeholder until the first Cloud Build run; cloudbuild.yaml owns the image after that.
+        image   = "us-docker.pkg.dev/cloudrun/container/job:latest"
+        command = ["python"]
+        args    = ["-m", "jobs.cluster_compositions"]
+
+        resources {
+          limits = {
+            cpu    = "2"
+            memory = "4Gi"
+          }
+        }
+
+        env {
+          name  = "GOOGLE_CLOUD_PROJECT"
+          value = var.project_id
+        }
+
+        env {
+          name  = "BQ_DATASET"
+          value = google_bigquery_dataset.tft.dataset_id
+        }
+
+        env {
+          name  = "BQ_STAGING_DATASET"
+          value = google_bigquery_dataset.tft_staging.dataset_id
+        }
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      template[0].template[0].containers[0].image,
+      client,
+      client_version,
+    ]
+  }
+
+  depends_on = [
+    google_bigquery_dataset_iam_member.runner_editor,
+    google_project_iam_member.runner_bigquery_jobs,
+  ]
+}
+
 # --- Daily schedule ---------------------------------------------------------
 
 resource "google_cloud_run_v2_job_iam_member" "scheduler_invoker" {
@@ -244,6 +311,31 @@ resource "google_cloud_scheduler_job" "daily" {
   depends_on = [google_cloud_run_v2_job_iam_member.scheduler_invoker]
 }
 
+resource "google_cloud_run_v2_job_iam_member" "scheduler_invoker_cluster" {
+  name     = google_cloud_run_v2_job.cluster_compositions.name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.scheduler.email}"
+}
+
+# Runs after the ingest, which can take up to its 3 hour timeout
+resource "google_cloud_scheduler_job" "cluster_daily" {
+  name      = "${local.cluster_job_name}-daily"
+  region    = var.region
+  schedule  = var.cluster_schedule
+  time_zone = "Etc/UTC"
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs/${google_cloud_run_v2_job.cluster_compositions.name}:run"
+    oauth_token {
+      service_account_email = google_service_account.scheduler.email
+    }
+  }
+
+  depends_on = [google_cloud_run_v2_job_iam_member.scheduler_invoker_cluster]
+}
+
 # --- Continuous deploy via Developer Connect ---------------------------------
 
 resource "google_cloudbuild_trigger" "ingest" {
@@ -267,8 +359,9 @@ resource "google_cloudbuild_trigger" "ingest" {
   }
 
   substitutions = {
-    _REGION = var.region
-    _JOB    = google_cloud_run_v2_job.ingest.name
+    _REGION      = var.region
+    _JOB         = google_cloud_run_v2_job.ingest.name
+    _CLUSTER_JOB = google_cloud_run_v2_job.cluster_compositions.name
   }
 
   depends_on = [

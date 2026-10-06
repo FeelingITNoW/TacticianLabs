@@ -6,7 +6,7 @@ from airflow.providers.google.cloud.hooks.gcs import GCSHook  # type: ignore
 from gcs_bucket_api.upload_to_bucket import upload_matches
 from datetime import datetime
 from db.parse_match_data import write_matches
-from google import genai
+from google_embedding.embedding_call import make_genai_client
 from riot_api.match_api import collect_match_ids, collect_matches
 from riot_api.constants import RIOT_REGIONS, HIGH_ELO_TIERS
 from riot_api.http_client import get_latest_version
@@ -85,13 +85,11 @@ def ingest_matches_to_gcs_and_bigquery():
 
     @task
     async def upsert_to_bigquery_task(matches_data: dict) -> None:
-        import os
-
         async with httpx.AsyncClient() as async_client:
             latest_version = await get_latest_version(async_client)
 
         bigquery_client = _bigquery_client()
-        google_genai_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+        google_genai_client = make_genai_client()
 
         match_ids = list(matches_data)
         failed = 0
