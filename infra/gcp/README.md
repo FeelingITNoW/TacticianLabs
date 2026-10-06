@@ -67,7 +67,23 @@ and Docker runs (`docker run ... tft-ingest`) will pick them up from `~/.config/
 
 `bigquery.tf` creates the `tft` dataset, a `tft_staging` dataset whose tables expire after a day, and one table per file in `bigquery/`. Primary and foreign keys are recorded `NOT ENFORCED`. The provider only takes single-column foreign keys, so composite ones are noted in the table descriptions. Tables have `deletion_protection` on (the provider default), so a change that forces replacement fails at apply instead of dropping data.
 
-The job writes with free load jobs into `tft_staging`, then one SQL script per 50-match chunk. That script's deletes are bounded by `played_at` partitions and clustered on `match_id`, so it scans little. The stats DAG reads every participant once per stats table per day. Both stay well inside the 1 TB/month free query tier at current volumes.
+The job writes with free load jobs into `tft_staging`, then one SQL script per 50-match chunk. That script's deletes are bounded by `played_at` partitions and clustered on `match_id`, so it scans little. The same script also MERGEs the chunk into the per-patch `*_totals` counter tables, reading only the staged rows and the rows being replaced. Both stay well inside the 1 TB/month free query tier at current volumes.
+
+### Stats tables and views
+
+`champion_totals`, `trait_totals`, `item_totals`, `champion_item_totals` and `patch_totals` hold exact integer counters per patch, kept current by the ingest. The `champion_stats`, `trait_stats`, `item_stats` and `champion_item_stats` views (templates in `bigquery/views/`) derive the rates, and `current_*_stats` restrict them to the latest patch with display names. The job's 1Gi of memory is unaffected: the counting runs inside BigQuery.
+
+**Migrating from the old stats tables.** `champion_stats`, `trait_stats` and `item_stats` used to be tables and are now views of the same names. Their tables have `deletion_protection`, so Terraform can't swap them. Do this once:
+```sh
+terraform state rm 'google_bigquery_table.linked["champion_stats"]' \
+  'google_bigquery_table.linked["trait_stats"]' 'google_bigquery_table.linked["item_stats"]'
+for t in champion_stats trait_stats item_stats; do bq rm -f -t "$PROJECT:tft.$t"; done
+terraform plan    # only creates (totals tables + views); no per-match table changes
+terraform apply
+PYTHONPATH=include python -m jobs.rebuild_stats          # backfill the totals from existing matches
+PYTHONPATH=include python -m jobs.rebuild_stats --check  # should report 0 mismatches
+```
+Run the backfill before the next ingest. Until it runs, the first write for a patch would start that patch's totals from only the new matches, and `rebuild_stats` would then correct it.
 
 ## Cost notes
 

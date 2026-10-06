@@ -34,3 +34,16 @@ class TestSetEighteenReferenceData:
         for rows in (_load_champions(), _load_traits(), _load_items()):
             names = [r["api_name"] for r in rows]
             assert len(names) == len(set(names))
+
+
+class TestMergeReferenceSql:
+    def test_upserts_without_deleting(self, fake_bq):
+        from db.seed_reference_data import merge_reference_sql
+
+        sql = merge_reference_sql(fake_bq, "champions", "test-project.tft_staging.champions_x")
+
+        assert sql.startswith("MERGE `test-project.tft.champions` AS t")
+        assert "ON t.api_name = s.api_name" in sql
+        assert "UPDATE SET name = s.name, cost = s.cost" in sql
+        assert "INSERT (api_name, name, cost) VALUES (s.api_name, s.name, s.cost)" in sql
+        assert "DELETE" not in sql

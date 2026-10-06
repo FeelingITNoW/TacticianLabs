@@ -24,6 +24,12 @@ locals {
       partition_field = "played_at"
       clustering      = ["match_id"]
     }
+    patch_totals = {
+      description     = "Cumulative per-patch match and board counts, the denominators for the stats views."
+      primary_key     = ["patch"]
+      partition_field = null
+      clustering      = null
+    }
     champions = {
       description     = "Set reference data from tft-champion.json, keyed by Riot api name."
       primary_key     = ["api_name"]
@@ -92,26 +98,81 @@ locals {
         { column = "item", table = "items", references = "api_name" },
       ]
     }
-    champion_stats = {
-      description     = "Per-patch champion stats, rebuilt by the calculate_tft_stats DAG."
+    champion_totals = {
+      description     = "Cumulative per-patch counters per champion, added to by every ingest write (include/data_aggregation). Read through the champion_stats view."
       primary_key     = ["patch", "api_name"]
       partition_field = null
       clustering      = null
       foreign_keys    = [{ column = "api_name", table = "champions", references = "api_name" }]
     }
-    trait_stats = {
-      description     = "Per-patch stats for active traits, rebuilt by the calculate_tft_stats DAG."
+    trait_totals = {
+      description     = "Cumulative per-patch counters per active trait. Read through the trait_stats view."
       primary_key     = ["patch", "api_name"]
       partition_field = null
       clustering      = null
       foreign_keys    = [{ column = "api_name", table = "traits", references = "api_name" }]
     }
-    item_stats = {
-      description     = "Per-patch item stats, rebuilt by the calculate_tft_stats DAG."
+    item_totals = {
+      description     = "Cumulative per-patch counters per item. Read through the item_stats view."
       primary_key     = ["patch", "api_name"]
       partition_field = null
       clustering      = null
       foreign_keys    = [{ column = "api_name", table = "items", references = "api_name" }]
+    }
+    champion_item_totals = {
+      description     = "Cumulative per-patch counters per champion + item combo. Read through the champion_item_stats view."
+      primary_key     = ["patch", "champion", "item"]
+      partition_field = null
+      clustering      = null
+      foreign_keys = [
+        { column = "champion", table = "champions", references = "api_name" },
+        { column = "item", table = "items", references = "api_name" },
+      ]
+    }
+  }
+
+  # Views over the totals tables. Rates are derived here from exact integer
+  # counters, so nothing stored is ever rounded. Templates live in bigquery/views/.
+  bq_stats_views = {
+    champion_stats = {
+      file        = "entity_stats.sql.tftpl"
+      vars        = { totals = "champion_totals" }
+      description = "Per-patch champion stats derived from champion_totals."
+    }
+    trait_stats = {
+      file        = "entity_stats.sql.tftpl"
+      vars        = { totals = "trait_totals" }
+      description = "Per-patch stats for active traits derived from trait_totals."
+    }
+    item_stats = {
+      file        = "entity_stats.sql.tftpl"
+      vars        = { totals = "item_totals" }
+      description = "Per-patch item stats derived from item_totals."
+    }
+    champion_item_stats = {
+      file        = "champion_item_stats.sql.tftpl"
+      vars        = {}
+      description = "Per-patch stats for each champion + item combo derived from champion_item_totals."
+    }
+  }
+
+  # What dashboards and LLM queries read: the latest patch only, with display names.
+  bq_current_views = {
+    current_champion_stats = {
+      file        = "current_champion_stats.sql.tftpl"
+      description = "champion_stats for the latest patch, with names and costs."
+    }
+    current_trait_stats = {
+      file        = "current_trait_stats.sql.tftpl"
+      description = "trait_stats for the latest patch, with names."
+    }
+    current_item_stats = {
+      file        = "current_item_stats.sql.tftpl"
+      description = "item_stats for the latest patch, with names."
+    }
+    current_champion_item_stats = {
+      file        = "current_champion_item_stats.sql.tftpl"
+      description = "champion_item_stats for the latest patch, with names."
     }
   }
 }
@@ -195,6 +256,44 @@ resource "google_bigquery_table" "linked" {
       }
     }
   }
+}
+
+resource "google_bigquery_table" "stats_views" {
+  for_each            = local.bq_stats_views
+  dataset_id          = google_bigquery_dataset.tft.dataset_id
+  table_id            = each.key
+  description         = each.value.description
+  deletion_protection = false
+
+  view {
+    use_legacy_sql = false
+    query = templatefile("${path.module}/bigquery/views/${each.value.file}", merge(
+      { project = var.project_id, dataset = google_bigquery_dataset.tft.dataset_id },
+      each.value.vars,
+    ))
+  }
+
+  depends_on = [google_bigquery_table.base, google_bigquery_table.linked]
+}
+
+# BigQuery validates a view's SQL when it is created, so these wait for the
+# stats views they select from.
+resource "google_bigquery_table" "current_views" {
+  for_each            = local.bq_current_views
+  dataset_id          = google_bigquery_dataset.tft.dataset_id
+  table_id            = each.key
+  description         = each.value.description
+  deletion_protection = false
+
+  view {
+    use_legacy_sql = false
+    query = templatefile("${path.module}/bigquery/views/${each.value.file}", {
+      project = var.project_id
+      dataset = google_bigquery_dataset.tft.dataset_id
+    })
+  }
+
+  depends_on = [google_bigquery_table.stats_views]
 }
 
 # --- Access for the ingest job ----------------------------------------------

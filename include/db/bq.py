@@ -7,6 +7,7 @@ which Terraform defines in infra/gcp/bigquery/.
 """
 
 import os
+import random
 import time
 import uuid
 from collections.abc import Callable, Iterator, Sequence
@@ -63,14 +64,16 @@ def _is_retryable(exc: Exception) -> bool:
     return "concurrent update" in text or "Could not serialize access" in text
 
 
-def with_retry(fn: Callable[[], T], max_retries: int = 6) -> T:
+def with_retry(fn: Callable[[], T], max_retries: int = 10) -> T:
     delay = 1.0
     for attempt in range(max_retries):
         try:
             return fn()
         except Exception as exc:
             if attempt < max_retries - 1 and _is_retryable(exc):
-                time.sleep(delay)
+                # Jitter, so parallel tasks that collided on the same totals rows
+                # don't retry in lockstep
+                time.sleep(delay * random.uniform(0.5, 1.5))
                 delay = min(delay * 2, 32)
                 continue
             raise
