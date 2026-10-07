@@ -91,7 +91,7 @@ Run the backfill before the next ingest. Until it runs, the first write for a pa
 
 Ranked games (queue 1100) are recorded from every crawled tier. Normal games (1090) are recorded only when a Challenger's history had the match, and every other mode (Hyper Roll, Double Up, ...) never is. Each match is judged by the union of the tiers that surfaced it. Matches the ingest rejects go to `rejected_matches`, and `filter_new_match_ids` checks it (with `matches`) before any request is spent fetching them, so each is requested once. The GCS archive holds only the matches that were recorded. The stats counters, stats views and comp clustering count ranked matches only, so Challenger normals sit in the match tables without moving any win or placement rate.
 
-Masters are capped: only the top 500 per platform by LP have their match history crawled (`MASTER_HISTORY_LIMIT`), though every Master still gets a `players` row.
+Each routing region ingests up to 2000 new matches per run (`ROUTING_MATCH_TARGET`), in priority order: every Challenger on its platforms, then every Grandmaster (both always in full, even past 2000), then Masters, round-robin by LP rank across the platforms, until the target is reached. Only matches not already in `matches` or `rejected_matches` count, and some are rejected after fetching, so slightly fewer than 2000 are recorded. Every Master still gets a `players` row.
 
 ### Embeddings
 
