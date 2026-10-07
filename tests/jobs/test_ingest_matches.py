@@ -478,8 +478,12 @@ class TestIngestRoutingGroup:
     async def test_the_crawl_only_counts_matches_not_stored_or_rejected(self):
         _, mocks = await self.run()
 
+        # The lambda looks the function up at call time, and run() has already left its patches
         filter_new = mocks["collect_match_ids"].await_args.kwargs["filter_new"]
-        assert filter_new(["NA1_ranked", "NA1_cached"]) == ["NA1_ranked"]
+        with patch.object(
+            ingest_matches, "filter_new_match_ids", mocks["filter_new_match_ids"]
+        ):
+            assert filter_new(["NA1_ranked", "NA1_cached"]) == ["NA1_ranked"]
 
     async def test_cached_matches_are_never_fetched(self):
         _, mocks = await self.run()
