@@ -8,7 +8,7 @@ from datetime import datetime
 from db.parse_match_data import write_matches
 from google_embedding.embedding_call import make_genai_client
 from riot_api.match_api import collect_match_ids, collect_matches
-from riot_api.constants import RIOT_REGIONS, HIGH_ELO_TIERS
+from riot_api.constants import RIOT_REGIONS, HIGH_ELO_TIERS, INGEST_QUEUES
 from riot_api.http_client import get_latest_version
 
 # Matches per BigQuery write: one staging round and one SQL script each
@@ -33,27 +33,36 @@ def ingest_matches_to_gcs_and_bigquery():
     @task(max_active_tis_per_dagrun=1)
     async def collect_match_ids_task(region: str) -> dict:
         async with httpx.AsyncClient() as async_client:
-            match_ids, match_region = await collect_match_ids(
+            sources, match_region = await collect_match_ids(
                 client=async_client,
                 regions=[region],
                 tiers=HIGH_ELO_TIERS,
             )
-        return {"match_ids": match_ids, "match_region": match_region}
+        # match_id -> tiers whose players had it, which decides the queues recorded
+        return {"sources": sources, "match_region": match_region}
 
     @task(max_active_tis_per_dagrun=1)
     async def collect_matches_task(collection_result: dict) -> dict:
-        from db.parse_match_data import filter_new_match_ids
-
-        # Skip matches a previous run already ingested (the look-back windows overlap)
-        new_match_ids = filter_new_match_ids(
-            _bigquery_client(), collection_result["match_ids"]
+        from db.parse_match_data import (
+            filter_new_match_ids,
+            select_matches,
+            write_rejected_matches,
         )
+
+        sources = collection_result["sources"]
+        bigquery_client = _bigquery_client()
+        # Skip matches a previous run already ingested or rejected (the look-back
+        # windows overlap), before spending requests on them
+        new_match_ids = filter_new_match_ids(bigquery_client, list(sources))
         async with httpx.AsyncClient() as async_client:
-            return await collect_matches(
+            fetched = await collect_matches(
                 client=async_client,
                 match_ids=new_match_ids,
                 match_region=collection_result["match_region"],
             )
+        accepted, rejected = select_matches(fetched, sources)
+        write_rejected_matches(bigquery_client, rejected)
+        return accepted
 
     @task
     async def upload_to_gcs_task(match_data: dict) -> None:
@@ -99,7 +108,7 @@ def ingest_matches_to_gcs_and_bigquery():
                 for match_id in match_ids[start : start + WRITE_CHUNK_SIZE]
             }
             written, chunk_failed = write_matches(
-                bigquery_client, chunk, latest_version, google_genai_client
+                bigquery_client, chunk, latest_version, google_genai_client, INGEST_QUEUES
             )
             failed += chunk_failed
             print(f"Wrote {written} of {len(chunk)} matches")

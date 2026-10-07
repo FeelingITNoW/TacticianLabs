@@ -7,7 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from jobs.load_gcs_matches import DEFAULT_PREFIX, load_prefix, parse_prefix
+from jobs.load_gcs_matches import DEFAULT_PREFIX, build_parser, load_prefix, parse_prefix
+from riot_api.constants import INGEST_QUEUES
 from tests.conftest import FakeBigQuery
 from tests.dags.test_constants import MATCH_DATA_RANKED_GAME
 
@@ -99,3 +100,33 @@ class TestLoadPrefix:
         (ingested, failed), _ = _load(fake_bq, storage)
 
         assert (ingested, failed) == (10, 50)
+
+
+class TestNormalGames:
+    def normal_blob(self, match_id: str):
+        body = copy.deepcopy(MATCH_DATA_RANKED_GAME)
+        body["metadata"]["match_id"] = match_id
+        body["info"]["queue_id"] = 1090
+        return SimpleNamespace(
+            name=f"{PREFIX}{match_id}.json", download_as_text=lambda: json.dumps(body)
+        )
+
+    def storage(self):
+        storage = MagicMock()
+        storage.list_blobs.return_value = [self.normal_blob("NA1_0001")]
+        return storage
+
+    def test_ranked_only_by_default(self, fake_bq):
+        (ingested, failed), _ = _load(fake_bq, self.storage())
+
+        assert (ingested, failed) == (0, 0)
+
+    def test_normals_load_when_asked_for(self, fake_bq):
+        (ingested, _), _ = _load(fake_bq, self.storage(), queues=INGEST_QUEUES)
+
+        assert ingested == 1
+        assert {r["queue_id"] for r in fake_bq.staged("matches")} == {1090}
+
+    def test_the_flag_is_off_by_default(self):
+        assert build_parser().parse_args([]).include_normals is False
+        assert build_parser().parse_args(["--include-normals"]).include_normals is True

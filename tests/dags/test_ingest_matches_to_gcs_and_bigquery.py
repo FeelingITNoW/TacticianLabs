@@ -506,7 +506,7 @@ class TestWriteMatches:
 
 
 class TestFilterNewMatchIds:
-    def test_drops_ids_already_in_matches(self):
+    def test_drops_ids_already_in_matches_or_rejected(self):
         from db.parse_match_data import filter_new_match_ids
         from tests.conftest import FakeBigQuery
 
@@ -517,6 +517,7 @@ class TestFilterNewMatchIds:
         assert result == ["NA1_1", "NA1_3"]
         (sql, params), = fake_bq.queries
         assert "`test-project.tft.matches`" in sql
+        assert "`test-project.tft.rejected_matches`" in sql
         assert params[0].values == ["NA1_1", "NA1_2", "NA1_3"]
 
     def test_empty_input_runs_no_query(self, fake_bq):

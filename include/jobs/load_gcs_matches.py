@@ -19,6 +19,7 @@ from google.cloud import bigquery, storage
 
 from db.bq import make_client
 from db.parse_match_data import filter_new_match_ids, write_matches
+from riot_api.constants import INGEST_QUEUES, RANKED_QUEUES
 
 DEFAULT_PREFIX = "tft/matches/16.19.1/2026-09-28/"
 CHUNK_SIZE = 50
@@ -49,6 +50,7 @@ def load_prefix(
     prefix: str = DEFAULT_PREFIX,
     limit: int | None = None,
     reload: bool = False,
+    queues: frozenset[int] = RANKED_QUEUES,
 ) -> tuple[int, int]:
     """Load one archive prefix. Returns (ingested, failed)."""
     version, _ = parse_prefix(prefix)
@@ -72,7 +74,9 @@ def load_prefix(
                 bodies = dict(
                     zip(chunk, pool.map(lambda m: blobs[m].download_as_text(), chunk))
                 )
-                written, bad = write_matches(bq_client, bodies, version, genai_client)
+                written, bad = write_matches(
+                    bq_client, bodies, version, genai_client, queues
+                )
             except Exception as exc:
                 failed += len(chunk)
                 print(f"Chunk starting at {start} failed: {exc!r}")
@@ -90,6 +94,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--bucket", default=None)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--reload", action="store_true")
+    parser.add_argument(
+        "--include-normals",
+        action="store_true",
+        help="also load normal games (ranked only by default). Archives from before "
+        "the ingest filtered by tier hold normals from every tier",
+    )
     parser.add_argument(
         "--skip-embeddings",
         action="store_true",
@@ -113,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
         prefix=args.prefix,
         limit=args.limit,
         reload=args.reload,
+        queues=INGEST_QUEUES if args.include_normals else RANKED_QUEUES,
     )
     return 1 if failed else 0
 

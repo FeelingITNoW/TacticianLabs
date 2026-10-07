@@ -1,5 +1,8 @@
 """Cloud Run Job entrypoint: ingest yesterday's high-elo TFT matches.
 
+Ranked games are recorded from any tier, normal games only from Challengers, and
+other modes never. Rejected match IDs are remembered so they are not fetched again.
+
 Run with `python -m jobs.ingest_matches` (PYTHONPATH must include `include/`).
 
 Each Cloud Run task handles one or more routing regions (AMERICAS, EUROPE, ASIA,
@@ -16,12 +19,18 @@ from google import genai
 from google.cloud import bigquery, storage
 
 from db.bq import make_client
-from db.parse_match_data import filter_new_match_ids, write_matches
+from db.parse_match_data import (
+    filter_new_match_ids,
+    select_matches,
+    write_matches,
+    write_rejected_matches,
+)
 from db.upsert_players import upsert_high_elo_players
 from gcs_bucket_api.upload_to_bucket import upload_matches
 from google_embedding.embedding_call import make_genai_client
 from riot_api.constants import (
     HIGH_ELO_TIERS,
+    INGEST_QUEUES,
     RIOT_REGIONS,
     RIOT_REGIONS_MAP,
 )
@@ -89,17 +98,19 @@ async def ingest_routing_group(
             failures += 1
             print(f"[{routing}] player upsert failed for {platform}: {exc!r}")
 
-    match_ids, _ = await collect_match_ids(
+    sources, _ = await collect_match_ids(
         client=http_client, regions=platforms, tiers=HIGH_ELO_TIERS
     )
-    new_match_ids = filter_new_match_ids(db_client, match_ids)
+    # Drops matches already stored and ones rejected on an earlier run, before any
+    # request is spent fetching them
+    new_match_ids = filter_new_match_ids(db_client, list(sources))
     if max_matches is not None:
         new_match_ids = new_match_ids[:max_matches]
     print(
-        f"[{routing}] {len(new_match_ids)} new of {len(match_ids)} collected match IDs"
+        f"[{routing}] {len(new_match_ids)} new of {len(sources)} collected match IDs"
     )
 
-    ingested = 0
+    ingested = rejected_count = 0
     bucket = os.getenv("GCS_BUCKET", DEFAULT_GCS_BUCKET)
     for start in range(0, len(new_match_ids), CHUNK_SIZE):
         chunk = new_match_ids[start : start + CHUNK_SIZE]
@@ -110,12 +121,20 @@ async def ingest_routing_group(
             print(f"[{routing}] fetching chunk of {len(chunk)} matches failed: {exc!r}")
             continue
 
+        matches, rejected = select_matches(matches, sources)
+        rejected_count += len(rejected)
+        try:
+            write_rejected_matches(db_client, rejected)
+        except Exception as exc:
+            # Only costs a refetch of these matches next run
+            print(f"[{routing}] caching {len(rejected)} rejected matches failed: {exc!r}")
+
         if storage_client is not None:
             await upload_matches(matches, storage_client, bucket, latest_version)
 
         try:
             written, failed = write_matches(
-                db_client, matches, latest_version, genai_client
+                db_client, matches, latest_version, genai_client, INGEST_QUEUES
             )
         except Exception as exc:
             failures += len(matches)
@@ -124,7 +143,10 @@ async def ingest_routing_group(
         ingested += written
         failures += failed
 
-    print(f"[{routing}] ingested {ingested} matches, {failures} failures")
+    print(
+        f"[{routing}] ingested {ingested} matches, rejected {rejected_count}, "
+        f"{failures} failures"
+    )
     return failures
 
 

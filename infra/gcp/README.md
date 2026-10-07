@@ -7,7 +7,7 @@ GitHub push ─▶ Developer Connect ─▶ Cloud Build (cloudbuild.yaml) ─▶
                                                                    └▶ gcloud run jobs update
 Cloud Scheduler (06:00 UTC) ─▶ Cloud Run Job tft-ingest (4 tasks: AMERICAS / ASIA / EUROPE / SEA)
                                   └▶ Riot API ─▶ GCS (raw JSON) + BigQuery `tft` (parsed rows + Gemini embeddings)
-Cloud Scheduler (10:00 UTC) ─▶ Cloud Run Job tft-cluster-compositions (same image)
+Cloud Scheduler (15:00 UTC) ─▶ Cloud Run Job tft-cluster-compositions (same image)
                                   └▶ BigQuery `tft`: board vectors ─▶ comps + board assignments
 ```
 
@@ -87,13 +87,19 @@ PYTHONPATH=include python -m jobs.rebuild_stats --check  # should report 0 misma
 ```
 Run the backfill before the next ingest. Until it runs, the first write for a patch would start that patch's totals from only the new matches, and `rebuild_stats` would then correct it.
 
+### Which matches are recorded
+
+Ranked games (queue 1100) are recorded from every crawled tier. Normal games (1090) are recorded only when a Challenger's history had the match, and every other mode (Hyper Roll, Double Up, ...) never is. Each match is judged by the union of the tiers that surfaced it. Matches the ingest rejects go to `rejected_matches`, and `filter_new_match_ids` checks it (with `matches`) before any request is spent fetching them, so each is requested once. The GCS archive holds only the matches that were recorded. The stats counters, stats views and comp clustering count ranked matches only, so Challenger normals sit in the match tables without moving any win or placement rate.
+
+Masters are capped: only the top 500 per platform by LP have their match history crawled (`MASTER_HISTORY_LIMIT`), though every Master still gets a `players` row.
+
 ### Embeddings
 
 The ingest job runs with `SKIP_EMBEDDINGS=1` (Terraform variable `skip_embeddings`, default `true`): it writes `participants` rows with an empty `embedding` and never calls Gemini, since nothing reads the embeddings yet and comp clustering uses its own vectors. To turn them back on, set `skip_embeddings = false` and apply. To fill in the gaps, run `python -m jobs.load_gcs_matches --prefix tft/matches/<version>/<date>/ --reload` for each day, which re-embeds from the GCS archive. The `GEMINI_API_KEY` secret stays in place so that switch is all it takes.
 
 ### Compositions
 
-`compositions` and `participant_compositions` hold the comps found in each patch and the comp each board was assigned to (boards that fit none have no row). They are rewritten per patch by a second Cloud Run Job, `tft-cluster-compositions` (`include/jobs/cluster_compositions.py`), which runs from the same image as the ingest (cloudbuild.yaml deploys both) at 10:00 UTC, after the ingest's 3 hour timeout. It is separate because it needs the whole patch, while the ingest is split into per-region tasks. It has 2 vCPU and 4Gi, since it holds the patch's boards in memory (as sparse matrices) and fits HDBSCAN on a 20k-board sample. The `composition_stats` view derives the rates and `current_composition_stats` restricts it to the latest patch.
+`compositions` and `participant_compositions` hold the comps found in each patch and the comp each board was assigned to (boards that fit none have no row). They are rewritten per patch by a second Cloud Run Job, `tft-cluster-compositions` (`include/jobs/cluster_compositions.py`), which runs from the same image as the ingest (cloudbuild.yaml deploys both) at 15:00 UTC, after the ingest's 8 hour timeout. It is separate because it needs the whole patch, while the ingest is split into per-region tasks. It has 2 vCPU and 4Gi, since it holds the patch's boards in memory (as sparse matrices) and fits HDBSCAN on a 20k-board sample. The `composition_stats` view derives the rates and `current_composition_stats` restricts it to the latest patch.
 
 After the first `terraform apply`, and whenever you want to tune the clustering:
 ```sh
@@ -105,4 +111,4 @@ Until the first Cloud Build run the job still points at Google's placeholder ima
 
 ## Cost notes
 
-Everything scales to zero between runs. Cloud Run Jobs bill vCPU-seconds while tasks run, and the free tier is 180k vCPU-s a month. Four 1-vCPU tasks running about 25 minutes a day stay inside it. Check the first few runs' durations. Most of that time is spent waiting on Riot's rate limits, not on CPU. Secret Manager (3 secrets), Scheduler (1 job), Artifact Registry (last 5 images) and GCS (write/read of a few MB/day) all fit in their free tiers.
+Everything scales to zero between runs. Cloud Run Jobs bill vCPU-seconds while tasks run, and the free tier is 180k vCPU-s a month. The 25 minutes a day this was sized on was for Challenger and Grandmaster only. Adding the top 500 Masters per platform takes the crawl from about 6.2k to about 11.7k players (SEA is the biggest task at about 4.3k, ASIA 2.4k, AMERICAS 2.9k, EUROPE 2.2k), so check the first few runs' durations against the 8 hour task timeout. Most of that time is spent waiting on Riot's rate limits, not on CPU. Secret Manager (3 secrets), Scheduler (1 job), Artifact Registry (last 5 images) and GCS (write/read of a few MB/day) all fit in their free tiers.
