@@ -5,10 +5,14 @@ from google import genai
 from google.cloud import bigquery
 
 from data_aggregation.data_aggregation import merge_totals_sql
-from db.bq import insert_from_staging_sql, run_query, staged, table_ref
+from db.bq import column_names, insert_from_staging_sql, run_query, staged, table_ref
 from db.upsert_players import merge_players_sql
 from google_embedding.embedding_call import Unit, get_embeddings
-from riot_api.constants import TFT_RANKED_QUEUE_ID
+from riot_api.constants import (
+    RANKED_QUEUES,
+    TFT_NORMAL_QUEUE_ID,
+    allowed_queues,
+)
 
 # Per-match tables, children first. write_match_rows replaces a match's rows in
 # all of them, and matches itself is handled separately (out first, in last).
@@ -24,18 +28,19 @@ def build_match_rows(
     match_data: dict,
     latest_version: str,
     google_genai_client: genai.Client | None,
+    queues: frozenset[int] = RANKED_QUEUES,
 ) -> dict[str, list[dict]] | None:
     """Turn one Riot match payload into rows keyed by BigQuery table name.
 
-    Returns None for anything that isn't a ranked game. Calls Gemini once to embed
+    Returns None for a game whose queue isn't in `queues` (ranked only by default). Calls Gemini once to embed
     every participant's board (units with star level and items, plus traits), or not at all when google_genai_client is None, in
     which case the participant rows have no embedding.
     """
     info = match_data["info"]
     match_id = match_data["metadata"]["match_id"]
-    if info["queue_id"] != TFT_RANKED_QUEUE_ID:
+    if info["queue_id"] not in queues:
         print(
-            f"Skipping match {match_id} - not a ranked game (queue_id: {info['queue_id']})"
+            f"Skipping match {match_id} - queue {info['queue_id']} isn't one of {sorted(queues)}"
         )
         return None
 
@@ -187,17 +192,21 @@ def write_matches(
     match_bodies: dict[str, str],
     latest_version: str,
     google_genai_client: genai.Client | None,
+    queues: frozenset[int] = RANKED_QUEUES,
 ) -> tuple[int, int]:
     """Parse raw match JSON (match_id -> body) and write the batch in one round.
 
-    Returns (ingested, failed). A match that fails to parse is skipped and counted.
+    Games outside `queues` are skipped. Returns (ingested, failed). A match that
+    fails to parse is skipped and counted.
     A failed write raises for the whole batch, which is safe to retry.
     """
     batches: list[dict[str, list[dict]]] = []
     failed = 0
     for match_id, body in match_bodies.items():
         try:
-            rows = build_match_rows(json.loads(body), latest_version, google_genai_client)
+            rows = build_match_rows(
+                json.loads(body), latest_version, google_genai_client, queues
+            )
         except Exception as exc:
             failed += 1
             print(f"Failed to parse {match_id}: {exc!r}")
@@ -208,13 +217,70 @@ def write_matches(
     return len(batches), failed
 
 
+def select_matches(
+    match_bodies: dict[str, str], sources: dict[str, list[str]]
+) -> tuple[dict[str, str], list[dict]]:
+    """Split fetched matches (match_id -> body) into the ones to record and the rejected.
+
+    A match is recorded when its queue is allowed for the tiers whose players had it
+    (`sources`, from collect_match_ids): ranked from any tier, normals only from a
+    Challenger. Rejected ones come back as `rejected_matches` rows, so later runs
+    skip them instead of fetching them again. A body that can't be read is kept, so
+    write_matches counts it as a failure and it is retried tomorrow.
+    """
+    accepted: dict[str, str] = {}
+    rejected: list[dict] = []
+    for match_id, body in match_bodies.items():
+        try:
+            info = json.loads(body)["info"]
+            queue_id = info["queue_id"]
+            played_at = datetime.fromtimestamp(
+                info["game_datetime"] / 1000, tz=timezone.utc
+            ).isoformat()
+        except Exception:
+            accepted[match_id] = body
+            continue
+        if queue_id in allowed_queues(sources.get(match_id, ())):
+            accepted[match_id] = body
+            continue
+        reason = "normal_not_challenger" if queue_id == TFT_NORMAL_QUEUE_ID else "queue"
+        rejected.append(
+            {
+                "match_id": match_id,
+                "played_at": played_at,
+                "queue_id": queue_id,
+                "reason": reason,
+                "rejected_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+    return accepted, rejected
+
+
+def write_rejected_matches(client: bigquery.Client, rows: list[dict]) -> None:
+    """Remember rejected matches so filter_new_match_ids skips them. Safe to repeat."""
+    if not rows:
+        return
+    with staged(client, {"rejected_matches": rows}) as staging:
+        columns = ", ".join(column_names(client, "rejected_matches"))
+        values = ", ".join(f"s.{c}" for c in column_names(client, "rejected_matches"))
+        run_query(
+            client,
+            f"MERGE `{table_ref(client, 'rejected_matches')}` AS t\n"
+            f"USING `{staging['rejected_matches']}` AS s ON t.match_id = s.match_id\n"
+            f"WHEN NOT MATCHED THEN INSERT ({columns}) VALUES ({values});",
+        )
+
+
 def filter_new_match_ids(client: bigquery.Client, match_ids: list[str]) -> list[str]:
-    """Drop match IDs that are already in the matches table."""
+    """Drop match IDs that are already in the matches table or were rejected before."""
     if not match_ids:
         return []
     rows = run_query(
         client,
         f"SELECT match_id FROM `{table_ref(client, 'matches')}` "
+        "WHERE match_id IN UNNEST(@match_ids)\n"
+        "UNION ALL\n"
+        f"SELECT match_id FROM `{table_ref(client, 'rejected_matches')}` "
         "WHERE match_id IN UNNEST(@match_ids)",
         [bigquery.ArrayQueryParameter("match_ids", "STRING", match_ids)],
     )

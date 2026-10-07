@@ -137,6 +137,9 @@ class TestBoardsSql:
     def test_only_active_traits(self):
         assert "WHERE tier_current > 0" in BOARDS_SQL
 
+    def test_only_ranked_boards_are_clustered(self):
+        assert "m.queue_id = 1100" in BOARDS_SQL
+
     def test_filters_on_the_patch_parameter(self, fake_bq):
         fake_bq.query_rows = [row(0, [feature("Ahri"), trait("Mage", 2)])]
 

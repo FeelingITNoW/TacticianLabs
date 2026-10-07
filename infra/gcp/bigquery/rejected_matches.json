@@ -1,0 +1,7 @@
+[
+  {"name": "match_id", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "played_at", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "Riot info.game_datetime; partitions the table"},
+  {"name": "queue_id", "type": "INT64", "description": "Riot queue id, e.g. 1090 normal, 1130 Hyper Roll"},
+  {"name": "reason", "type": "STRING", "description": "queue: a mode we never record. normal_not_challenger: a normal game no Challenger played"},
+  {"name": "rejected_at", "type": "TIMESTAMP"}
+]

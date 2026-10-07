@@ -34,8 +34,8 @@ variable "skip_embeddings" {
 
 variable "cluster_schedule" {
   type        = string
-  default     = "0 10 * * *"
-  description = "Cron (UTC) for the daily composition clustering, which should start after the ingest has finished (06:00 plus up to 3 hours)."
+  default     = "0 15 * * *"
+  description = "Cron (UTC) for the daily composition clustering, which should start after the ingest has finished (06:00 plus its 8 hour timeout, plus an hour of margin)."
 }
 
 variable "developer_connect_region" {

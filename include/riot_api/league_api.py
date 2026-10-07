@@ -28,6 +28,13 @@ async def get_grandmasters(client: httpx.AsyncClient, region: str) -> list[str]:
     return [player["puuid"] for player in league["entries"]]
 
 
-async def get_masters(client: httpx.AsyncClient, region: str) -> list[str]:
+async def get_masters(
+    client: httpx.AsyncClient, region: str, limit: int | None = None
+) -> list[str]:
+    """Master puuids, highest LP first. The list is huge (up to 10k on one platform),
+    so `limit` keeps only the top of it."""
     league = await get_league_entries(client, region, "MASTER")
-    return [player["puuid"] for player in league["entries"]]
+    ranked = sorted(
+        league["entries"], key=lambda player: player.get("leaguePoints", 0), reverse=True
+    )
+    return [player["puuid"] for player in ranked[:limit]]

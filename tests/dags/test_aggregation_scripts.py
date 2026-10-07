@@ -53,6 +53,11 @@ class TestCounts:
         assert "tier_current" not in counts_sql("champion_totals", live)
         assert "tier_current" not in counts_sql("item_totals", live)
 
+    def test_only_ranked_matches_count(self, fake_bq):
+        # matches also holds Challengers' normal games, which no counter includes
+        for totals in TOTALS:
+            assert "m.queue_id = 1100" in counts_sql(totals, live_resolver(fake_bq))
+
     def test_counts_each_board_once(self, fake_bq):
         # Two copies of a champion must not count as two boards
         for totals, spec in TOTALS.items():

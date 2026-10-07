@@ -153,7 +153,7 @@ resource "google_cloud_run_v2_job" "ingest" {
 
     template {
       service_account = google_service_account.runner.email
-      timeout         = "10800s"
+      timeout         = "28800s"
       max_retries     = 1
 
       containers {
@@ -318,7 +318,7 @@ resource "google_cloud_run_v2_job_iam_member" "scheduler_invoker_cluster" {
   member   = "serviceAccount:${google_service_account.scheduler.email}"
 }
 
-# Runs after the ingest, which can take up to its 3 hour timeout
+# Runs after the ingest, which can take up to its 8 hour timeout
 resource "google_cloud_scheduler_job" "cluster_daily" {
   name      = "${local.cluster_job_name}-daily"
   region    = var.region

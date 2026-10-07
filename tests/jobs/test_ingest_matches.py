@@ -1,10 +1,33 @@
 """Tests for the Cloud Run Job entrypoint (include/jobs/ingest_matches.py)."""
 
+import copy
+import json
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
+from db.parse_match_data import (
+    build_match_rows,
+    filter_new_match_ids,
+    select_matches,
+    write_rejected_matches,
+)
 from google_embedding.embedding_call import make_genai_client
+from jobs import ingest_matches
 from jobs.ingest_matches import groups_for_task, groups_from_env, routing_groups
-from riot_api.constants import RIOT_REGIONS, RIOT_REGIONS_MAP
+from riot_api.constants import (
+    HIGH_ELO_TIERS,
+    INGEST_QUEUES,
+    MASTER_HISTORY_LIMIT,
+    RANKED_QUEUES,
+    RIOT_REGIONS,
+    RIOT_REGIONS_MAP,
+    VALID_RANK_TIERS,
+    allowed_queues,
+)
+from riot_api.league_api import _APEX_TIER_PATHS, get_masters
+from riot_api.match_api import collect_match_ids
+from tests.dags.test_constants import MATCH_DATA_RANKED_GAME
 
 
 class TestSharding:
@@ -53,3 +76,300 @@ class TestEmbeddingSwitch:
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
         assert make_genai_client() is not None
+
+
+class TestHighEloTiers:
+    def test_masters_are_ingested_with_the_other_apex_tiers(self):
+        assert HIGH_ELO_TIERS == ["CHALLENGER", "GRANDMASTER", "MASTER"]
+
+    def test_every_tier_is_valid_and_has_a_league_endpoint(self):
+        assert set(HIGH_ELO_TIERS) <= set(VALID_RANK_TIERS)
+        assert set(HIGH_ELO_TIERS) <= set(_APEX_TIER_PATHS)
+
+    async def test_match_ids_are_collected_for_master_players_too(self):
+        histories = {"c1": ["NA1_1"], "g1": ["NA1_2"], "m1": ["NA1_2", "NA1_3"]}
+
+        async def history(client, puuid, startTime, region):
+            return histories[puuid]
+
+        with (
+            patch("riot_api.match_api.get_challengers", AsyncMock(return_value=["c1"])),
+            patch("riot_api.match_api.get_grandmasters", AsyncMock(return_value=["g1"])),
+            patch("riot_api.match_api.get_masters", AsyncMock(return_value=["m1"])) as masters,
+            patch("riot_api.match_api.get_match_history_from_last_n_days", history),
+        ):
+            match_ids, _ = await collect_match_ids(MagicMock(), ["NA1"], HIGH_ELO_TIERS)
+
+        masters.assert_awaited_once()
+        assert sorted(match_ids) == ["NA1_1", "NA1_2", "NA1_3"]
+
+    async def test_master_players_and_ranked_stats_are_upserted(self, fake_bq):
+        from db.upsert_players import upsert_high_elo_players
+
+        league = AsyncMock(return_value={"entries": []})
+        with patch("db.upsert_players.get_league_entries", league):
+            await upsert_high_elo_players(MagicMock(), "NA1", fake_bq)
+
+        assert [call.args[2] for call in league.await_args_list] == HIGH_ELO_TIERS
+
+
+RANKED, NORMAL, HYPER_ROLL = 1100, 1090, 1130
+
+
+def body(match_id: str, queue_id: int) -> str:
+    """A fetched match: just enough of the payload for select_matches."""
+    return json.dumps(
+        {"info": {"queue_id": queue_id, "game_datetime": 1_790_000_000_000}, "id": match_id}
+    )
+
+
+class TestAllowedQueues:
+    def test_ranked_from_every_tier(self):
+        for tier in HIGH_ELO_TIERS:
+            assert RANKED in allowed_queues([tier])
+
+    def test_normals_only_from_challengers(self):
+        assert NORMAL in allowed_queues(["CHALLENGER"])
+        assert NORMAL not in allowed_queues(["GRANDMASTER"])
+        assert NORMAL not in allowed_queues(["MASTER"])
+        assert NORMAL not in allowed_queues(["GRANDMASTER", "MASTER"])
+
+    def test_a_match_is_judged_by_the_union_of_its_tiers(self):
+        assert NORMAL in allowed_queues(["CHALLENGER", "MASTER"])
+
+    def test_other_modes_never_and_no_information_means_ranked_only(self):
+        assert HYPER_ROLL not in INGEST_QUEUES
+        assert allowed_queues([]) == RANKED_QUEUES
+        assert allowed_queues(["BRONZE"]) == RANKED_QUEUES
+
+
+class TestMasterCap:
+    ENTRIES = [{"puuid": f"m{i}", "leaguePoints": i} for i in range(600)]
+
+    async def test_get_masters_keeps_the_highest_lp(self):
+        league = AsyncMock(return_value={"entries": list(self.ENTRIES)})
+        with patch("riot_api.league_api.get_league_entries", league):
+            top = await get_masters(MagicMock(), "NA1", limit=3)
+            everyone = await get_masters(MagicMock(), "NA1")
+
+        assert top == ["m599", "m598", "m597"]
+        assert len(everyone) == 600
+
+    async def test_only_the_top_500_masters_per_platform_are_crawled(self):
+        histories = []
+
+        async def history(client, puuid, startTime, region):
+            histories.append(puuid)
+            return []
+
+        league = AsyncMock(return_value={"entries": list(self.ENTRIES)})
+        with (
+            patch("riot_api.league_api.get_league_entries", league),
+            patch("riot_api.match_api.get_challengers", AsyncMock(return_value=["c1"])),
+            patch("riot_api.match_api.get_grandmasters", AsyncMock(return_value=["g1"])),
+            patch("riot_api.match_api.get_match_history_from_last_n_days", history),
+        ):
+            await collect_match_ids(MagicMock(), ["NA1"], HIGH_ELO_TIERS)
+
+        masters = [puuid for puuid in histories if puuid.startswith("m")]
+        assert MASTER_HISTORY_LIMIT == 500
+        assert len(masters) == 500
+        assert "m599" in masters and "m99" not in masters
+        assert {"c1", "g1"} <= set(histories)
+
+    async def test_a_match_remembers_every_tier_that_had_it(self):
+        histories = {"c1": ["NA1_1", "NA1_2"], "g1": ["NA1_2"], "m1": ["NA1_2", "NA1_3"]}
+
+        async def history(client, puuid, startTime, region):
+            return histories[puuid]
+
+        with (
+            patch("riot_api.match_api.get_challengers", AsyncMock(return_value=["c1"])),
+            patch("riot_api.match_api.get_grandmasters", AsyncMock(return_value=["g1"])),
+            patch("riot_api.match_api.get_masters", AsyncMock(return_value=["m1"])),
+            patch("riot_api.match_api.get_match_history_from_last_n_days", history),
+        ):
+            sources, routing = await collect_match_ids(MagicMock(), ["NA1"], HIGH_ELO_TIERS)
+
+        assert routing == "AMERICAS"
+        assert sources == {
+            "NA1_1": ["CHALLENGER"],
+            "NA1_2": ["CHALLENGER", "GRANDMASTER", "MASTER"],
+            "NA1_3": ["MASTER"],
+        }
+
+
+class TestSelectMatches:
+    def select(self, queue_id, tiers):
+        accepted, rejected = select_matches(
+            {"NA1_1": body("NA1_1", queue_id)}, {"NA1_1": tiers}
+        )
+        return accepted, rejected
+
+    @pytest.mark.parametrize("tiers", [["CHALLENGER"], ["GRANDMASTER"], ["MASTER"]])
+    def test_ranked_is_recorded_from_any_tier(self, tiers):
+        accepted, rejected = self.select(RANKED, tiers)
+
+        assert list(accepted) == ["NA1_1"] and rejected == []
+
+    def test_a_normal_game_is_recorded_when_a_challenger_played_it(self):
+        accepted, rejected = self.select(NORMAL, ["CHALLENGER"])
+        assert list(accepted) == ["NA1_1"] and rejected == []
+
+        accepted, rejected = self.select(NORMAL, ["CHALLENGER", "MASTER"])
+        assert list(accepted) == ["NA1_1"] and rejected == []
+
+    @pytest.mark.parametrize("tiers", [["GRANDMASTER"], ["MASTER"], ["GRANDMASTER", "MASTER"]])
+    def test_a_normal_game_nobody_challenger_played_is_rejected(self, tiers):
+        accepted, (row,) = self.select(NORMAL, tiers)
+
+        assert accepted == {}
+        assert row["match_id"] == "NA1_1"
+        assert row["queue_id"] == NORMAL
+        assert row["reason"] == "normal_not_challenger"
+
+    @pytest.mark.parametrize("tiers", [["CHALLENGER"], ["MASTER"]])
+    def test_other_modes_are_rejected_even_for_challengers(self, tiers):
+        accepted, (row,) = self.select(HYPER_ROLL, tiers)
+
+        assert accepted == {}
+        assert (row["queue_id"], row["reason"]) == (HYPER_ROLL, "queue")
+
+    def test_rejected_rows_match_the_table_and_carry_the_game_time(self, fake_bq):
+        _, rejected = self.select(NORMAL, ["MASTER"])
+
+        write_rejected_matches(fake_bq, rejected)
+
+        (staged_row,) = fake_bq.staged("rejected_matches")
+        assert staged_row["played_at"].startswith("2026-")
+        assert staged_row["match_id"] == "NA1_1"
+
+    def test_an_unreadable_body_is_kept_so_it_counts_as_a_failure(self):
+        accepted, rejected = select_matches({"NA1_1": "not json"}, {"NA1_1": ["MASTER"]})
+
+        assert list(accepted) == ["NA1_1"] and rejected == []
+
+    def test_a_match_with_no_source_is_judged_as_ranked_only(self):
+        accepted, rejected = select_matches(
+            {"NA1_1": body("NA1_1", NORMAL), "NA1_2": body("NA1_2", RANKED)}, {}
+        )
+
+        assert list(accepted) == ["NA1_2"]
+        assert [row["match_id"] for row in rejected] == ["NA1_1"]
+
+
+class TestBuildMatchRowsQueues:
+    def match(self, queue_id):
+        data = copy.deepcopy(MATCH_DATA_RANKED_GAME)
+        data["info"]["queue_id"] = queue_id
+        return data
+
+    def test_normal_games_are_skipped_unless_asked_for(self):
+        assert build_match_rows(self.match(NORMAL), "16.19.1", None) is None
+
+    def test_normal_games_are_built_with_the_ingest_queues(self):
+        rows = build_match_rows(self.match(NORMAL), "16.19.1", None, INGEST_QUEUES)
+
+        assert rows["matches"][0]["queue_id"] == NORMAL
+
+    def test_other_modes_are_skipped_even_with_the_ingest_queues(self):
+        assert build_match_rows(self.match(HYPER_ROLL), "16.19.1", None, INGEST_QUEUES) is None
+
+
+class TestRejectedMatchCache:
+    def test_rejected_matches_are_merged_in_without_duplicates(self, fake_bq):
+        _, rejected = select_matches(
+            {"NA1_1": body("NA1_1", HYPER_ROLL)}, {"NA1_1": ["MASTER"]}
+        )
+
+        write_rejected_matches(fake_bq, rejected)
+
+        (sql, _), = fake_bq.queries
+        assert "MERGE `test-project.tft.rejected_matches`" in sql
+        assert "WHEN NOT MATCHED THEN INSERT" in sql
+        assert "WHEN MATCHED" not in sql
+        assert len(fake_bq.staged("rejected_matches")) == 1
+
+    def test_nothing_to_remember_runs_no_query(self, fake_bq):
+        write_rejected_matches(fake_bq, [])
+
+        assert not fake_bq.queries and not fake_bq.loads
+
+    def test_ids_are_checked_against_the_rejected_table_too(self):
+        from tests.conftest import FakeBigQuery
+
+        fake_bq = FakeBigQuery(query_rows=[{"match_id": "NA1_2"}])
+
+        assert filter_new_match_ids(fake_bq, ["NA1_1", "NA1_2"]) == ["NA1_1"]
+
+        (sql, _), = fake_bq.queries
+        assert "`test-project.tft.matches`" in sql
+        assert "`test-project.tft.rejected_matches`" in sql
+
+
+class TestIngestRoutingGroup:
+    SOURCES = {
+        "NA1_ranked": ["MASTER"],
+        "NA1_normal_challenger": ["CHALLENGER"],
+        "NA1_normal_master": ["MASTER"],
+        "NA1_hyper": ["CHALLENGER"],
+        "NA1_cached": ["MASTER"],
+    }
+    BODIES = {
+        "NA1_ranked": body("NA1_ranked", RANKED),
+        "NA1_normal_challenger": body("NA1_normal_challenger", NORMAL),
+        "NA1_normal_master": body("NA1_normal_master", NORMAL),
+        "NA1_hyper": body("NA1_hyper", HYPER_ROLL),
+    }
+
+    async def run(self, write_rejected=None):
+        mocks = {
+            "upsert_high_elo_players": AsyncMock(),
+            "collect_match_ids": AsyncMock(return_value=(self.SOURCES, "AMERICAS")),
+            # NA1_cached was rejected on an earlier run
+            "filter_new_match_ids": MagicMock(
+                side_effect=lambda client, ids: [i for i in ids if i != "NA1_cached"]
+            ),
+            "collect_matches": AsyncMock(return_value=dict(self.BODIES)),
+            "upload_matches": AsyncMock(),
+            "write_matches": MagicMock(side_effect=lambda c, bodies, *a: (len(bodies), 0)),
+            "write_rejected_matches": write_rejected or MagicMock(),
+        }
+        with patch.multiple(ingest_matches, **mocks):
+            failures = await ingest_matches.ingest_routing_group(
+                MagicMock(), MagicMock(), None, MagicMock(), "AMERICAS", ["NA1"], "16.19.1", None
+            )
+        return failures, mocks
+
+    async def test_cached_matches_are_never_fetched(self):
+        _, mocks = await self.run()
+
+        fetched = mocks["collect_matches"].await_args.args[1]
+        assert "NA1_cached" not in fetched
+        assert sorted(fetched) == sorted(set(self.SOURCES) - {"NA1_cached"})
+
+    async def test_only_matches_worth_recording_are_archived_and_written(self):
+        failures, mocks = await self.run()
+
+        archived = mocks["upload_matches"].await_args.args[0]
+        written = mocks["write_matches"].call_args.args[1]
+        assert sorted(archived) == sorted(written) == ["NA1_normal_challenger", "NA1_ranked"]
+        assert mocks["write_matches"].call_args.args[-1] == INGEST_QUEUES
+        assert failures == 0
+
+    async def test_the_rest_are_remembered(self):
+        _, mocks = await self.run()
+
+        (rejected,) = mocks["write_rejected_matches"].call_args.args[1:]
+        assert {row["match_id"]: row["reason"] for row in rejected} == {
+            "NA1_normal_master": "normal_not_challenger",
+            "NA1_hyper": "queue",
+        }
+
+    async def test_a_failed_cache_write_does_not_fail_the_run(self):
+        failing = MagicMock(side_effect=RuntimeError("BigQuery down"))
+
+        failures, mocks = await self.run(write_rejected=failing)
+
+        assert failures == 0
+        mocks["write_matches"].assert_called_once()

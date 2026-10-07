@@ -8,7 +8,8 @@ rounding error. `rebuild_totals` recomputes everything from the match tables for
 a first backfill or recovery, and `check_totals` diffs the two.
 
 A board is one player in one match. It counts once per entity however many copies
-it holds, and `patch` is `matches.game_version`.
+it holds, and `patch` is `matches.game_version`. Only ranked matches count: the match
+tables also hold Challengers' normal games, which every count here leaves out.
 """
 
 from collections.abc import Callable
@@ -17,6 +18,7 @@ from dataclasses import dataclass
 from google.cloud import bigquery
 
 from db.bq import run_query, table_ref
+from riot_api.constants import TFT_RANKED_QUEUE_ID
 
 # Maps a source table name to a SQL table expression
 Resolver = Callable[[str], str]
@@ -113,6 +115,7 @@ SELECT
   MAX(m.played_at) AS last_played_at
 FROM {t("matches")} AS m
 JOIN {t("participants")} AS p USING (match_id)
+WHERE m.queue_id = {TFT_RANKED_QUEUE_ID}
 GROUP BY patch
 """
     keys = ", ".join(spec.keys)
@@ -121,6 +124,7 @@ WITH boards AS (
   SELECT m.game_version AS patch, p.match_id, p.puuid, p.placement
   FROM {t("participants")} AS p
   JOIN {t("matches")} AS m USING (match_id)
+  WHERE m.queue_id = {TFT_RANKED_QUEUE_ID}
 ),
 used AS (
   -- DISTINCT: two copies of a champion, or one item on two units, count once per board

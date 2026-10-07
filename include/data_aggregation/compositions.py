@@ -18,7 +18,8 @@ similar than the comp's own boards are. A cluster whose own boards are not alike
 reported as a comp. The comps' counters are exact: they come
 from every assigned board, not from the sample.
 
-Star levels play no part in the vectors; they are only reported per comp.
+Star levels play no part in the vectors; they are only reported per comp. Only ranked
+boards are clustered, since the match tables also hold Challengers' normal games.
 """
 
 import hashlib
@@ -34,6 +35,7 @@ from sklearn.cluster import HDBSCAN
 from sklearn.preprocessing import normalize
 
 from db.bq import insert_from_staging_sql, run_query, staged, table_ref, with_retry
+from riot_api.constants import TFT_RANKED_QUEUE_ID
 
 TRAIT_WEIGHT = 1.0
 SAMPLE_SIZE = 20_000
@@ -81,9 +83,9 @@ SELECT
 FROM `{participants}` AS p
 JOIN `{matches}` AS m ON m.match_id = p.match_id
 JOIN features AS f ON f.match_id = p.match_id AND f.puuid = p.puuid
-WHERE m.game_version = @patch
+WHERE m.game_version = @patch AND m.queue_id = {ranked_queue}
 GROUP BY p.match_id, p.puuid, p.played_at, p.placement
-"""
+""".replace("{ranked_queue}", str(TFT_RANKED_QUEUE_ID))
 
 
 @dataclass

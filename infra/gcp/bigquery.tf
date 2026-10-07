@@ -19,7 +19,13 @@ locals {
       clustering      = null
     }
     matches = {
-      description     = "One row per ranked match."
+      description     = "One row per recorded match: ranked games (queue_id 1100) from any crawled tier, plus normal games (1090) from Challengers. Stats and comps count ranked only."
+      primary_key     = ["match_id"]
+      partition_field = "played_at"
+      clustering      = ["match_id"]
+    }
+    rejected_matches = {
+      description     = "Fetched matches the ingest chose not to record (a mode we never keep, or a normal game no Challenger played). Checked before fetching so each is requested once."
       primary_key     = ["match_id"]
       partition_field = "played_at"
       clustering      = ["match_id"]
