@@ -8,7 +8,12 @@ from datetime import datetime
 from db.parse_match_data import write_matches
 from google_embedding.embedding_call import make_genai_client
 from riot_api.match_api import collect_match_ids, collect_matches
-from riot_api.constants import RIOT_REGIONS, HIGH_ELO_TIERS, INGEST_QUEUES
+from riot_api.constants import (
+    RIOT_REGIONS,
+    HIGH_ELO_TIERS,
+    INGEST_QUEUES,
+    routing_groups,
+)
 from riot_api.http_client import get_latest_version
 
 # Matches per BigQuery write: one staging round and one SQL script each
@@ -31,29 +36,30 @@ def _bigquery_client():
 def ingest_matches_to_gcs_and_bigquery():
 
     @task(max_active_tis_per_dagrun=1)
-    async def collect_match_ids_task(region: str) -> dict:
+    async def collect_match_ids_task(platforms: list[str]) -> dict:
+        from db.parse_match_data import filter_new_match_ids
+
+        bigquery_client = _bigquery_client()
+        # One task per routing region: the target of new matches is per routing region.
+        # filter_new skips matches a previous run already ingested or rejected (the
+        # look-back windows overlap), so only new ones count toward it
         async with httpx.AsyncClient() as async_client:
             sources, match_region = await collect_match_ids(
                 client=async_client,
-                regions=[region],
+                regions=platforms,
                 tiers=HIGH_ELO_TIERS,
+                filter_new=lambda ids: filter_new_match_ids(bigquery_client, ids),
             )
         # match_id -> tiers whose players had it, which decides the queues recorded
         return {"sources": sources, "match_region": match_region}
 
     @task(max_active_tis_per_dagrun=1)
     async def collect_matches_task(collection_result: dict) -> dict:
-        from db.parse_match_data import (
-            filter_new_match_ids,
-            select_matches,
-            write_rejected_matches,
-        )
+        from db.parse_match_data import select_matches, write_rejected_matches
 
         sources = collection_result["sources"]
         bigquery_client = _bigquery_client()
-        # Skip matches a previous run already ingested or rejected (the look-back
-        # windows overlap), before spending requests on them
-        new_match_ids = filter_new_match_ids(bigquery_client, list(sources))
+        new_match_ids = list(sources)
         async with httpx.AsyncClient() as async_client:
             fetched = await collect_matches(
                 client=async_client,
@@ -115,7 +121,7 @@ def ingest_matches_to_gcs_and_bigquery():
         if failed:
             raise RuntimeError(f"{failed} matches failed to parse")
 
-    collection_results = collect_match_ids_task.expand(region=RIOT_REGIONS)
+    collection_results = collect_match_ids_task.expand(platforms=list(routing_groups().values()))
     collected_matches = collect_matches_task.expand(
         collection_result=collection_results
     )

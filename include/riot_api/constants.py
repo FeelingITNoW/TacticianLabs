@@ -15,12 +15,15 @@ VALID_RANK_TIERS = [
     "GRANDMASTER",
     "CHALLENGER",
 ]
-# The apex tiers the ingest crawls. Master is by far the biggest (~28k players across
-# RIOT_REGIONS vs ~6k for the other two), and each player costs one match-history request,
-# so only the top MASTER_HISTORY_LIMIT Masters per platform (by LP) have their history
-# crawled. Every Master still gets a players row, since the league list is one request.
+# The apex tiers the ingest crawls, in priority order. Every Challenger and Grandmaster on
+# a routing region's platforms is always crawled. Masters (~28k across RIOT_REGIONS, one
+# match-history request each) only fill what is left of ROUTING_MATCH_TARGET new matches
+# per routing region, round-robin by LP rank across the platforms. Every Master still
+# gets a players row, since the league list is one request.
 HIGH_ELO_TIERS = ["CHALLENGER", "GRANDMASTER", "MASTER"]
-MASTER_HISTORY_LIMIT = 500
+ROUTING_MATCH_TARGET = 2000
+# Masters crawled between checks of how many new matches the routing region has
+MASTER_CRAWL_BATCH = 20
 LOW_ELO_TIERS = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND"]
 TFT_RANKED_QUEUE_ID = 1100
 TFT_NORMAL_QUEUE_ID = 1090
@@ -81,3 +84,11 @@ RIOT_REGIONS_MAP = {
     "TW2": "SEA",
     "VN2": "SEA",
 }
+
+
+def routing_groups() -> dict[str, list[str]]:
+    """Platforms in RIOT_REGIONS grouped by routing region, in a stable order."""
+    groups: dict[str, list[str]] = {}
+    for platform in RIOT_REGIONS:
+        groups.setdefault(RIOT_REGIONS_MAP[platform], []).append(platform)
+    return dict(sorted(groups.items()))

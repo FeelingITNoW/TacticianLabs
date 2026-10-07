@@ -5,6 +5,10 @@ other modes never. Rejected match IDs are remembered so they are not fetched aga
 
 Run with `python -m jobs.ingest_matches` (PYTHONPATH must include `include/`).
 
+Per routing region the crawl takes every Challenger, then every Grandmaster, then Masters
+(round-robin by LP rank across the region's platforms) until ROUTING_MATCH_TARGET new
+matches are found; see riot_api.match_api.collect_match_ids.
+
 Each Cloud Run task handles one or more routing regions (AMERICAS, EUROPE, ASIA,
 SEA). Riot rate limits apply per routing value, so the parallel tasks don't compete.
 Set REGIONS=SG2,KR to override the sharding for local runs.
@@ -33,20 +37,13 @@ from riot_api.constants import (
     INGEST_QUEUES,
     RIOT_REGIONS,
     RIOT_REGIONS_MAP,
+    routing_groups,
 )
 from riot_api.http_client import get_latest_version
 from riot_api.match_api import collect_match_ids, collect_matches
 
 CHUNK_SIZE = 50
 DEFAULT_GCS_BUCKET = "tft-match-data"
-
-
-def routing_groups() -> dict[str, list[str]]:
-    """Platforms in RIOT_REGIONS grouped by routing region, in a stable order."""
-    groups: dict[str, list[str]] = {}
-    for platform in RIOT_REGIONS:
-        groups.setdefault(RIOT_REGIONS_MAP[platform], []).append(platform)
-    return dict(sorted(groups.items()))
 
 
 def groups_for_task(task_index: int, task_count: int) -> dict[str, list[str]]:
@@ -98,17 +95,19 @@ async def ingest_routing_group(
             failures += 1
             print(f"[{routing}] player upsert failed for {platform}: {exc!r}")
 
+    # filter_new drops matches already stored and ones rejected on an earlier run, so
+    # only new ones count toward the target and no request is spent fetching the rest
     sources, _ = await collect_match_ids(
-        client=http_client, regions=platforms, tiers=HIGH_ELO_TIERS
+        client=http_client,
+        regions=platforms,
+        tiers=HIGH_ELO_TIERS,
+        filter_new=lambda ids: filter_new_match_ids(db_client, ids),
     )
-    # Drops matches already stored and ones rejected on an earlier run, before any
-    # request is spent fetching them
-    new_match_ids = filter_new_match_ids(db_client, list(sources))
+    # Highest-priority tiers first
+    new_match_ids = list(sources)
     if max_matches is not None:
         new_match_ids = new_match_ids[:max_matches]
-    print(
-        f"[{routing}] {len(new_match_ids)} new of {len(sources)} collected match IDs"
-    )
+    print(f"[{routing}] {len(new_match_ids)} new match IDs to fetch")
 
     ingested = rejected_count = 0
     bucket = os.getenv("GCS_BUCKET", DEFAULT_GCS_BUCKET)

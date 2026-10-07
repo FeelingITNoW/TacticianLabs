@@ -18,7 +18,8 @@ from jobs.ingest_matches import groups_for_task, groups_from_env, routing_groups
 from riot_api.constants import (
     HIGH_ELO_TIERS,
     INGEST_QUEUES,
-    MASTER_HISTORY_LIMIT,
+    MASTER_CRAWL_BATCH,
+    ROUTING_MATCH_TARGET,
     RANKED_QUEUES,
     RIOT_REGIONS,
     RIOT_REGIONS_MAP,
@@ -155,28 +156,6 @@ class TestMasterCap:
         assert top == ["m599", "m598", "m597"]
         assert len(everyone) == 600
 
-    async def test_only_the_top_500_masters_per_platform_are_crawled(self):
-        histories = []
-
-        async def history(client, puuid, startTime, region):
-            histories.append(puuid)
-            return []
-
-        league = AsyncMock(return_value={"entries": list(self.ENTRIES)})
-        with (
-            patch("riot_api.league_api.get_league_entries", league),
-            patch("riot_api.match_api.get_challengers", AsyncMock(return_value=["c1"])),
-            patch("riot_api.match_api.get_grandmasters", AsyncMock(return_value=["g1"])),
-            patch("riot_api.match_api.get_match_history_from_last_n_days", history),
-        ):
-            await collect_match_ids(MagicMock(), ["NA1"], HIGH_ELO_TIERS)
-
-        masters = [puuid for puuid in histories if puuid.startswith("m")]
-        assert MASTER_HISTORY_LIMIT == 500
-        assert len(masters) == 500
-        assert "m599" in masters and "m99" not in masters
-        assert {"c1", "g1"} <= set(histories)
-
     async def test_a_match_remembers_every_tier_that_had_it(self):
         histories = {"c1": ["NA1_1", "NA1_2"], "g1": ["NA1_2"], "m1": ["NA1_2", "NA1_3"]}
 
@@ -197,6 +176,156 @@ class TestMasterCap:
             "NA1_2": ["CHALLENGER", "GRANDMASTER", "MASTER"],
             "NA1_3": ["MASTER"],
         }
+
+
+class TestCrawlPriority:
+    """C and GM in full, then Masters round-robin until the routing region has its target."""
+
+    def crawl(self, players, histories, filter_new=list):
+        """Run collect_match_ids over fake leagues; returns (result, puuids crawled in order)."""
+        crawled: list[str] = []
+
+        async def history(client, puuid, startTime, region):
+            crawled.append(puuid)
+            return histories.get(puuid, [])
+
+        async def run(regions, target):
+            with (
+                patch(
+                    "riot_api.match_api.get_challengers",
+                    AsyncMock(side_effect=lambda c, r: players["CHALLENGER"][r]),
+                ),
+                patch(
+                    "riot_api.match_api.get_grandmasters",
+                    AsyncMock(side_effect=lambda c, r: players["GRANDMASTER"][r]),
+                ),
+                patch(
+                    "riot_api.match_api.get_masters",
+                    AsyncMock(side_effect=lambda c, r: players["MASTER"][r]),
+                ),
+                patch("riot_api.match_api.get_match_history_from_last_n_days", history),
+            ):
+                return await collect_match_ids(
+                    MagicMock(), regions, HIGH_ELO_TIERS, target, filter_new
+                )
+
+        return run, crawled
+
+    def test_the_target_is_2000_new_matches_per_routing_region(self):
+        assert ROUTING_MATCH_TARGET == 2000
+
+    async def test_challengers_then_grandmasters_then_masters(self):
+        players = {
+            "CHALLENGER": {"NA1": ["c1"]},
+            "GRANDMASTER": {"NA1": ["g1"]},
+            "MASTER": {"NA1": ["m1"]},
+        }
+        run, crawled = self.crawl(
+            players, {"c1": ["NA1_1"], "g1": ["NA1_2"], "m1": ["NA1_2", "NA1_3"]}
+        )
+
+        sources, _ = await run(["NA1"], 10)
+
+        assert crawled == ["c1", "g1", "m1"]
+        assert list(sources) == ["NA1_1", "NA1_2", "NA1_3"]
+
+    async def test_challengers_and_grandmasters_are_crawled_in_full_even_past_the_target(self):
+        players = {
+            "CHALLENGER": {"NA1": ["c1", "c2"]},
+            "GRANDMASTER": {"NA1": ["g1", "g2"]},
+            "MASTER": {"NA1": ["m1"]},
+        }
+        histories = {p: [f"NA1_{p}_{i}" for i in range(3)] for p in ("c1", "c2", "g1", "g2", "m1")}
+        run, crawled = self.crawl(players, histories)
+
+        sources, _ = await run(["NA1"], 5)
+
+        assert crawled == ["c1", "c2", "g1", "g2"]  # no Master: 12 matches > target
+        assert len(sources) == 12
+
+    async def test_masters_fill_the_room_left_and_stop_at_the_target(self):
+        masters = [f"m{i}" for i in range(100)]
+        players = {
+            "CHALLENGER": {"NA1": ["c1"]},
+            "GRANDMASTER": {"NA1": []},
+            "MASTER": {"NA1": masters},
+        }
+        histories = {"c1": ["NA1_c0", "NA1_c1"]}
+        histories.update({m: [f"NA1_{m}_{i}" for i in range(5)] for m in masters})
+        run, crawled = self.crawl(players, histories)
+
+        sources, _ = await run(["NA1"], 30)
+
+        assert len(sources) == 30  # trimmed to exactly the target
+        assert list(sources)[:2] == ["NA1_c0", "NA1_c1"]  # priority order kept
+        # Stops at batch granularity instead of crawling all 100 Masters
+        assert len(crawled) - 1 <= 6 + MASTER_CRAWL_BATCH
+
+    async def test_masters_are_interleaved_by_lp_rank_across_platforms(self):
+        players = {
+            "CHALLENGER": {"NA1": [], "BR1": []},
+            "GRANDMASTER": {"NA1": [], "BR1": []},
+            "MASTER": {"NA1": ["na1", "na2", "na3"], "BR1": ["br1"]},
+        }
+        run, crawled = self.crawl(players, {})
+
+        await run(["NA1", "BR1"], None)
+
+        assert crawled == ["na1", "br1", "na2", "na3"]
+
+    async def test_matches_that_are_not_new_do_not_count_toward_the_target(self):
+        players = {
+            "CHALLENGER": {"NA1": ["c1"]},
+            "GRANDMASTER": {"NA1": []},
+            "MASTER": {"NA1": [f"m{i}" for i in range(60)]},
+        }
+        histories = {"c1": ["NA1_old_1", "NA1_new_1"]}
+        histories.update({f"m{i}": [f"NA1_old_m{i}", f"NA1_new_m{i}"] for i in range(60)})
+        run, crawled = self.crawl(
+            players, histories, filter_new=lambda ids: [i for i in ids if "_new_" in i]
+        )
+
+        sources, _ = await run(["NA1"], 25)
+
+        assert len(sources) == 25
+        assert all("_new_" in match_id for match_id in sources)
+        assert len(crawled) > 25  # the stored matches were crawled but not counted
+
+    async def test_a_match_carries_every_tier_that_had_it_in_priority_order(self):
+        players = {
+            "CHALLENGER": {"NA1": ["c1"]},
+            "GRANDMASTER": {"NA1": ["g1"]},
+            "MASTER": {"NA1": ["m1"]},
+        }
+        run, _ = self.crawl(
+            players, {"c1": ["NA1_a"], "g1": ["NA1_a", "NA1_b"], "m1": ["NA1_b", "NA1_c"]}
+        )
+
+        sources, _ = await run(["NA1"], 10)
+
+        assert sources == {
+            "NA1_a": ["CHALLENGER", "GRANDMASTER"],
+            "NA1_b": ["GRANDMASTER", "MASTER"],
+            "NA1_c": ["MASTER"],
+        }
+
+    async def test_the_target_applies_per_routing_region(self):
+        players = {
+            "CHALLENGER": {"NA1": ["c_na"], "EUW1": ["c_eu"]},
+            "GRANDMASTER": {"NA1": [], "EUW1": []},
+            "MASTER": {
+                "NA1": [f"na{i}" for i in range(50)],
+                "EUW1": [f"eu{i}" for i in range(50)],
+            },
+        }
+        histories = {p: [f"{p}_{i}" for i in range(4)] for r in players.values() for ps in r.values() for p in ps}
+        run, _ = self.crawl(players, histories)
+
+        sources, routing = await run(["NA1", "EUW1"], 20)
+
+        assert routing == "EUROPE"
+        assert sum(m.startswith(("c_na", "na")) for m in sources) == 20
+        assert sum(m.startswith(("c_eu", "eu")) for m in sources) == 20
 
 
 class TestSelectMatches:
@@ -325,8 +454,13 @@ class TestIngestRoutingGroup:
     async def run(self, write_rejected=None):
         mocks = {
             "upsert_high_elo_players": AsyncMock(),
-            "collect_match_ids": AsyncMock(return_value=(self.SOURCES, "AMERICAS")),
-            # NA1_cached was rejected on an earlier run
+            # The crawl already dropped NA1_cached, which was rejected on an earlier run
+            "collect_match_ids": AsyncMock(
+                return_value=(
+                    {k: v for k, v in self.SOURCES.items() if k != "NA1_cached"},
+                    "AMERICAS",
+                )
+            ),
             "filter_new_match_ids": MagicMock(
                 side_effect=lambda client, ids: [i for i in ids if i != "NA1_cached"]
             ),
@@ -340,6 +474,16 @@ class TestIngestRoutingGroup:
                 MagicMock(), MagicMock(), None, MagicMock(), "AMERICAS", ["NA1"], "16.19.1", None
             )
         return failures, mocks
+
+    async def test_the_crawl_only_counts_matches_not_stored_or_rejected(self):
+        _, mocks = await self.run()
+
+        # The lambda looks the function up at call time, and run() has already left its patches
+        filter_new = mocks["collect_match_ids"].await_args.kwargs["filter_new"]
+        with patch.object(
+            ingest_matches, "filter_new_match_ids", mocks["filter_new_match_ids"]
+        ):
+            assert filter_new(["NA1_ranked", "NA1_cached"]) == ["NA1_ranked"]
 
     async def test_cached_matches_are_never_fetched(self):
         _, mocks = await self.run()
