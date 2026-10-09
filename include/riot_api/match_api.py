@@ -63,9 +63,17 @@ async def _crawl_player(
 ) -> list[str]:
     """Record the tier against each match in a player's history. Returns the IDs no
     earlier player had."""
-    match_list = await get_match_history_from_last_n_days(
-        client, puuid=puuid, startTime=start_time, region=routing
-    )
+    try:
+        match_list = await get_match_history_from_last_n_days(
+            client, puuid=puuid, startTime=start_time, region=routing
+        )
+    except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+        # Retries are already exhausted. One unreachable player shouldn't abort the
+        # region's crawl; 5xx and network errors are skipped, anything else is a bug
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code < 500:
+            raise
+        print(f"[{routing}] skipping player {puuid}: {exc!r}")
+        return []
     if "status" in match_list:
         raise RuntimeError(f"Riot API returned an error for PUUID {puuid}: {match_list}")
     fresh = []

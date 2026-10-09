@@ -40,7 +40,8 @@ async def riot_get_with_retry(
     params: dict | None = None,
     max_retries: int = 5,
 ) -> httpx.Response:
-    """riot_get with exponential backoff for 429s and transient network errors."""
+    """riot_get with exponential backoff for 429s, 5xx and transient network errors
+    (including timeouts)."""
     delay = 1
     for attempt in range(max_retries):
         try:
@@ -53,9 +54,16 @@ async def riot_get_with_retry(
                 )
                 await asyncio.sleep(retry_after)
                 delay = min(delay * 2, 120)
+            elif exc.response.status_code >= 500 and attempt < max_retries - 1:
+                print(
+                    f"Riot returned {exc.response.status_code}, retrying in {delay}s "
+                    f"(attempt {attempt + 1}/{max_retries})"
+                )
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 120)
             else:
                 raise
-        except (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError) as exc:
+        except httpx.TransportError as exc:
             if attempt < max_retries - 1:
                 print(
                     f"Network error, retrying in {delay}s (attempt {attempt + 1}/{max_retries}): {exc}"
