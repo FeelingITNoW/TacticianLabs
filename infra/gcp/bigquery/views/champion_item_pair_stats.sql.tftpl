@@ -1,0 +1,21 @@
+-- Same rates as entity_stats, per champion + item pair (two items on the same unit,
+-- item_a <= item_b by api name). share_of_champion_games is the fraction of the
+-- champion's boards that had a unit holding the pair.
+SELECT
+  c.patch,
+  c.champion,
+  c.item_a,
+  c.item_b,
+  c.boards AS games,
+  SAFE_DIVIDE(c.win_count, c.boards) AS win_rate,
+  SAFE_DIVIDE(c.top4_count, c.boards) AS top4_rate,
+  SAFE_DIVIDE(c.placement_sum, c.boards) AS average_placement,
+  SAFE_DIVIDE(c.boards, c.matches) AS play_rate,
+  SAFE_DIVIDE(c.boards, p.matches) AS frequency,
+  SAFE_DIVIDE(c.boards, ch.boards) AS share_of_champion_games,
+  c.matches,
+  c.updated_at
+FROM `${project}.${dataset}.champion_item_pair_totals` AS c
+JOIN `${project}.${dataset}.patch_totals` AS p USING (patch)
+LEFT JOIN `${project}.${dataset}.champion_totals` AS ch
+  ON ch.patch = c.patch AND ch.api_name = c.champion

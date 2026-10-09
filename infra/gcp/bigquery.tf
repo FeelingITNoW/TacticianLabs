@@ -148,6 +148,17 @@ locals {
         { column = "item", table = "items", references = "api_name" },
       ]
     }
+    champion_item_pair_totals = {
+      description     = "Cumulative per-patch counters per champion + item pair (two items on the same unit, item_a <= item_b). Read through the champion_item_pair_stats view."
+      primary_key     = ["patch", "champion", "item_a", "item_b"]
+      partition_field = null
+      clustering      = null
+      foreign_keys = [
+        { column = "champion", table = "champions", references = "api_name" },
+        { column = "item_a", table = "items", references = "api_name" },
+        { column = "item_b", table = "items", references = "api_name" },
+      ]
+    }
   }
 
   # Views over the totals tables. Rates are derived here from exact integer
@@ -173,6 +184,11 @@ locals {
       vars        = {}
       description = "Per-patch stats for each champion + item combo derived from champion_item_totals."
     }
+    champion_item_pair_stats = {
+      file        = "champion_item_pair_stats.sql.tftpl"
+      vars        = {}
+      description = "Per-patch stats for each champion + item pair derived from champion_item_pair_totals."
+    }
     composition_stats = {
       file        = "composition_stats.sql.tftpl"
       vars        = {}
@@ -197,6 +213,10 @@ locals {
     current_champion_item_stats = {
       file        = "current_champion_item_stats.sql.tftpl"
       description = "champion_item_stats for the latest patch, with names."
+    }
+    current_champion_item_pair_stats = {
+      file        = "current_champion_item_pair_stats.sql.tftpl"
+      description = "champion_item_pair_stats for the latest patch, with names."
     }
     current_composition_stats = {
       file        = "current_composition_stats.sql.tftpl"

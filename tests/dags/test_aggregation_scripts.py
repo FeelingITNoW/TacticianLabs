@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timezone
 
 import pytest
 
@@ -7,6 +8,7 @@ from data_aggregation.data_aggregation import (
     check_sql,
     check_totals,
     counts_sql,
+    latest_patch,
     live_resolver,
     merge_sql,
     merge_totals_sql,
@@ -255,3 +257,111 @@ class TestTotalsSqlCompiles:
     @pytest.mark.parametrize("totals", list(TOTALS))
     def test_check(self, client, totals):
         self.dry_run(client, check_sql(client, totals))
+
+    @pytest.mark.parametrize("totals", list(TOTALS))
+    def test_scoped_rebuild_and_check(self, client, totals):
+        from datetime import datetime, timezone
+
+        from google.cloud import bigquery
+
+        now = datetime.now(timezone.utc)
+        params = [
+            bigquery.ScalarQueryParameter("patch", "STRING", "x"),
+            bigquery.ScalarQueryParameter("lo", "TIMESTAMP", now),
+            bigquery.ScalarQueryParameter("hi", "TIMESTAMP", now),
+        ]
+        self.dry_run(client, rebuild_sql(client, [totals], patch=True), params)
+        self.dry_run(client, check_sql(client, totals, patch=True), params)
+
+
+class TestPairs:
+    def test_pair_source_joins_two_items_of_the_same_unit(self, fake_bq):
+        sql = counts_sql("champion_item_pair_totals", live_resolver(fake_bq))
+
+        assert sql.count("USING (match_id, puuid, slot)") == 2
+        assert "a.item_index < b.item_index" in sql
+        assert "LEAST(a.item, b.item) AS item_a" in sql
+        assert "GREATEST(a.item, b.item) AS item_b" in sql
+
+    def test_keys_the_pair_table_on_patch_champion_and_both_items(self, fake_bq):
+        sql = merge_sql(
+            fake_bq,
+            "champion_item_pair_totals",
+            new_resolver(fake_bq, STAGING),
+            old_resolver(fake_bq),
+        )
+
+        assert (
+            "t.patch = s.patch AND t.champion = s.champion "
+            "AND t.item_a = s.item_a AND t.item_b = s.item_b"
+        ) in sql
+
+
+WINDOW = [{"lo": datetime(2026, 9, 24, tzinfo=timezone.utc), "hi": datetime(2026, 10, 8, tzinfo=timezone.utc)}]
+
+
+class TestScopedRebuild:
+    def test_default_is_every_table_and_every_patch(self, fake_bq):
+        stmts = statements(rebuild_sql(fake_bq))
+
+        assert "@patch" not in rebuild_sql(fake_bq)
+        assert "@lo" not in rebuild_sql(fake_bq)
+        assert len(stmts) == 2 + 2 * len(TOTALS)
+
+    def test_replaces_only_the_named_table_and_patch(self, fake_bq):
+        sql = rebuild_sql(fake_bq, ["champion_item_pair_totals"], patch=True)
+        stmts = statements(sql)
+
+        assert stmts[0] == "BEGIN TRANSACTION"
+        assert stmts[-1] == "COMMIT TRANSACTION"
+        assert len(stmts) == 4
+        assert (
+            "DELETE FROM `test-project.tft.champion_item_pair_totals` WHERE patch = @patch"
+            in stmts
+        )
+        assert stmts[2].startswith("INSERT INTO `test-project.tft.champion_item_pair_totals`")
+        assert stmts[2].endswith("WHERE patch = @patch")
+
+    def test_reads_only_the_patch_days(self, fake_bq):
+        sql = rebuild_sql(fake_bq, ["champion_item_pair_totals"], patch=True)
+
+        assert "FROM `test-project.tft.unit_items` WHERE played_at BETWEEN @lo AND @hi" in sql
+        assert "FROM `test-project.tft.matches` WHERE played_at BETWEEN @lo AND @hi" in sql
+        assert "FROM `test-project.tft.unit_items`)" not in sql
+
+    def test_passes_the_patch_and_its_window(self, fake_bq):
+        fake_bq.query_rows = WINDOW
+
+        rebuild_totals(fake_bq, ["champion_item_pair_totals"], patch="16.19.1")
+
+        # The window lookup, then the rebuild with @patch, @lo and @hi
+        assert len(fake_bq.queries) == 2
+        _, params = fake_bq.queries[1]
+        assert [p.name for p in params] == ["patch", "lo", "hi"]
+        assert params[0].value == "16.19.1"
+        assert params[1].value == WINDOW[0]["lo"]
+
+    def test_an_unknown_table_is_refused(self, fake_bq):
+        with pytest.raises(ValueError, match="nope"):
+            rebuild_sql(fake_bq, ["nope"])
+
+    def test_a_patch_without_ranked_matches_writes_nothing(self, fake_bq):
+        fake_bq.query_rows = [{"lo": None, "hi": None}]
+
+        with pytest.raises(ValueError, match="16.1.1"):
+            rebuild_totals(fake_bq, patch="16.1.1")
+
+        assert len(fake_bq.queries) == 1  # only the window lookup
+
+    def test_check_compares_only_that_patch(self, fake_bq):
+        sql = check_sql(fake_bq, "champion_item_pair_totals", patch=True)
+
+        assert sql.count("WHERE patch = @patch") == 3  # recount, and the target twice
+        assert "played_at BETWEEN @lo AND @hi" in sql
+        assert "DELETE" not in sql and "INSERT" not in sql
+
+    def test_latest_patch_is_the_newest_by_play_time(self, fake_bq):
+        fake_bq.query_rows = [{"patch": "16.19.1"}]
+
+        assert latest_patch(fake_bq) == "16.19.1"
+        assert "ORDER BY last_played_at DESC LIMIT 1" in fake_bq.queries[0][0]

@@ -73,7 +73,7 @@ The job writes with free load jobs into `tft_staging`, then one SQL script per 5
 
 ### Stats tables and views
 
-`champion_totals`, `trait_totals`, `item_totals`, `champion_item_totals` and `patch_totals` hold exact integer counters per patch, kept current by the ingest. The `champion_stats`, `trait_stats`, `item_stats` and `champion_item_stats` views (templates in `bigquery/views/`) derive the rates, and `current_*_stats` restrict them to the latest patch with display names. The job's 1Gi of memory is unaffected: the counting runs inside BigQuery.
+`champion_totals`, `trait_totals`, `item_totals`, `champion_item_totals`, `champion_item_pair_totals` and `patch_totals` hold exact integer counters per patch, kept current by the ingest. The `champion_stats`, `trait_stats`, `item_stats`, `champion_item_stats` and `champion_item_pair_stats` views (templates in `bigquery/views/`) derive the rates, and `current_*_stats` restrict them to the latest patch with display names. The job's 1Gi of memory is unaffected: the counting runs inside BigQuery.
 
 **Migrating from the old stats tables.** `champion_stats`, `trait_stats` and `item_stats` used to be tables and are now views of the same names. Their tables have `deletion_protection`, so Terraform can't swap them. Do this once:
 ```sh

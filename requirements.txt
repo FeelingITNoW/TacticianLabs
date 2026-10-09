@@ -5,6 +5,8 @@ google-cloud-bigquery
 google-genai
 anyio
 pytest-asyncio
-numpy
+# The runtime image ships numpy 1.x, which a bare `numpy` accepts, but current pyarrow
+# (pulled in by the Google provider) needs numpy 2
+numpy>=2
 scikit-learn
 scipy
