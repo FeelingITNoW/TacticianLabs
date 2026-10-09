@@ -1,19 +1,21 @@
-"""Cumulative per-patch counters for champions, traits, items and champion+item combos.
+"""Cumulative per-patch counters for champions, traits, items and champion+item combos and pairs.
 
 Every ingest write adds its matches' counts to the `*_totals` tables inside the
 same transaction that inserts the matches, so nothing is ever re-scanned. The
 counters are integers that sum across matches (boards, matches, placement sum,
 top-4 and win counts), so rates derived from them in the stats views carry no
 rounding error. `rebuild_totals` recomputes everything from the match tables for
-a first backfill or recovery, and `check_totals` diffs the two.
+a first backfill or recovery (all patches, or one patch of chosen tables, which only
+reads that patch's days), and `check_totals` diffs the two.
 
 A board is one player in one match. It counts once per entity however many copies
 it holds, and `patch` is `matches.game_version`. Only ranked matches count: the match
 tables also hold Challengers' normal games, which every count here leaves out.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 
 from google.cloud import bigquery
 
@@ -62,6 +64,19 @@ TOTALS: dict[str, Totals] = {
             f"JOIN {t('unit_items')} AS i USING (match_id, puuid, slot)"
         ),
     ),
+    # Two items on the same unit, as an unordered pair (item_a <= item_b), so two copies
+    # of one item are a valid pair. A unit with 3 items has 3 pairs.
+    "champion_item_pair_totals": Totals(
+        ("champion", "item_a", "item_b"),
+        lambda t: (
+            "SELECT match_id, puuid, u.champion, "
+            "LEAST(a.item, b.item) AS item_a, GREATEST(a.item, b.item) AS item_b "
+            f"FROM {t('participant_units')} AS u "
+            f"JOIN {t('unit_items')} AS a USING (match_id, puuid, slot) "
+            f"JOIN {t('unit_items')} AS b USING (match_id, puuid, slot) "
+            "WHERE a.item_index < b.item_index"
+        ),
+    ),
     "patch_totals": Totals(
         (), None, counters=("matches", "boards", "last_played_at"), maxima=("last_played_at",)
     ),
@@ -81,6 +96,15 @@ def old_resolver(client: bigquery.Client) -> Resolver:
     return lambda name: (
         f"(SELECT * FROM `{table_ref(client, name)}` "
         "WHERE match_id IN UNNEST(@match_ids) AND played_at BETWEEN @lo AND @hi)"
+    )
+
+
+def window_resolver(client: bigquery.Client) -> Resolver:
+    """Rows played inside @lo..@hi: every per-match table is partitioned on played_at,
+    so a rebuild of one patch only reads that patch's days."""
+    return lambda name: (
+        f"(SELECT * FROM `{table_ref(client, name)}` "
+        "WHERE played_at BETWEEN @lo AND @hi)"
     )
 
 
@@ -200,30 +224,97 @@ def merge_totals_sql(client: bigquery.Client, staging: dict[str, str]) -> list[s
 # --- Rebuild and check -----------------------------------------------------
 
 
-def rebuild_sql(client: bigquery.Client) -> str:
-    """Recompute every totals table from the match tables in one transaction."""
-    live = live_resolver(client)
+def latest_patch(client: bigquery.Client) -> str | None:
+    """The newest patch, by the same rule as the current_* views."""
+    rows = run_query(
+        client,
+        f"SELECT patch FROM `{table_ref(client, 'patch_totals')}` "
+        "ORDER BY last_played_at DESC LIMIT 1",
+    )
+    return rows[0]["patch"] if rows else None
+
+
+def patch_window(client: bigquery.Client, patch: str) -> tuple[datetime, datetime] | None:
+    """First and last play time of the patch's ranked matches, or None if it has none."""
+    rows = run_query(
+        client,
+        f"""
+SELECT MIN(played_at) AS lo, MAX(played_at) AS hi
+FROM `{table_ref(client, "matches")}`
+WHERE game_version = @patch AND queue_id = {TFT_RANKED_QUEUE_ID}
+""",
+        [bigquery.ScalarQueryParameter("patch", "STRING", patch)],
+    )
+    if not rows or rows[0]["lo"] is None:
+        return None
+    return rows[0]["lo"], rows[0]["hi"]
+
+
+def patch_params(client: bigquery.Client, patch: str) -> list[bigquery.ScalarQueryParameter]:
+    """@patch, @lo and @hi for a rebuild or check of one patch."""
+    window = patch_window(client, patch)
+    if window is None:
+        raise ValueError(f"No ranked matches for patch {patch}")
+    return [
+        bigquery.ScalarQueryParameter("patch", "STRING", patch),
+        bigquery.ScalarQueryParameter("lo", "TIMESTAMP", window[0]),
+        bigquery.ScalarQueryParameter("hi", "TIMESTAMP", window[1]),
+    ]
+
+
+def _selected(tables: Sequence[str] | None) -> list[str]:
+    names = list(tables) if tables else list(TOTALS)
+    unknown = set(names) - set(TOTALS)
+    if unknown:
+        raise ValueError(f"Unknown totals tables: {sorted(unknown)}")
+    return names
+
+
+def rebuild_sql(
+    client: bigquery.Client, tables: Sequence[str] | None = None, patch: bool = False
+) -> str:
+    """Recompute totals tables from the match tables in one transaction.
+
+    By default every table, every patch. `tables` limits which tables. With `patch`
+    only the rows of the patch in @patch are replaced, counted from the days in
+    @lo..@hi (see patch_params), so older patches' rows are left alone.
+    """
+    resolver = window_resolver(client) if patch else live_resolver(client)
     statements = ["BEGIN TRANSACTION;"]
-    for name in TOTALS:
+    for name in _selected(tables):
         columns = ", ".join([*value_columns(name), "updated_at"])
-        statements.append(f"DELETE FROM `{table_ref(client, name)}` WHERE TRUE;")
+        scope = " WHERE patch = @patch" if patch else ""
+        statements.append(
+            f"DELETE FROM `{table_ref(client, name)}` WHERE {'patch = @patch' if patch else 'TRUE'};"
+        )
         statements.append(
             f"INSERT INTO `{table_ref(client, name)}` ({columns})\n"
-            f"SELECT *, CURRENT_TIMESTAMP() FROM ({counts_sql(name, live)});"
+            f"SELECT *, CURRENT_TIMESTAMP() FROM ({counts_sql(name, resolver)}){scope};"
         )
     statements.append("COMMIT TRANSACTION;")
     return "\n".join(statements)
 
 
-def rebuild_totals(client: bigquery.Client) -> None:
-    run_query(client, rebuild_sql(client))
+def rebuild_totals(
+    client: bigquery.Client, tables: Sequence[str] | None = None, patch: str | None = None
+) -> None:
+    """Rebuild the totals tables (see rebuild_sql); `patch` limits it to that patch.
+
+    Raises ValueError for an unknown table or a patch with no ranked matches.
+    """
+    params = patch_params(client, patch) if patch else ()
+    run_query(client, rebuild_sql(client, tables, patch=bool(patch)), params)
 
 
-def check_sql(client: bigquery.Client, name: str) -> str:
+def check_sql(client: bigquery.Client, name: str, patch: bool = False) -> str:
     columns = ", ".join(value_columns(name))
-    target = f"SELECT {columns} FROM `{table_ref(client, name)}`"
+    scope = " WHERE patch = @patch" if patch else ""
+    computed = counts_sql(name, window_resolver(client) if patch else live_resolver(client))
+    if patch:
+        computed = f"SELECT * FROM ({computed}){scope}"
+    target = f"SELECT {columns} FROM `{table_ref(client, name)}`{scope}"
     return f"""
-WITH computed AS ({counts_sql(name, live_resolver(client))})
+WITH computed AS ({computed})
 SELECT COUNT(*) AS mismatches FROM (
   (SELECT {columns} FROM computed EXCEPT DISTINCT {target})
   UNION ALL
@@ -232,10 +323,17 @@ SELECT COUNT(*) AS mismatches FROM (
 """
 
 
-def check_totals(client: bigquery.Client) -> dict[str, int]:
-    """Rows where each totals table disagrees with a fresh recount (all zero when healthy)."""
-    return {
-        name: run_query(client, check_sql(client, name))[0]["mismatches"]
-        for name in TOTALS
-    }
+def check_totals(
+    client: bigquery.Client, tables: Sequence[str] | None = None, patch: str | None = None
+) -> dict[str, int]:
+    """Rows where each totals table disagrees with a fresh recount (all zero when healthy).
 
+    `tables` and `patch` scope it the same way as rebuild_totals.
+    """
+    params = patch_params(client, patch) if patch else ()
+    return {
+        name: run_query(client, check_sql(client, name, patch=bool(patch)), params)[0][
+            "mismatches"
+        ]
+        for name in _selected(tables)
+    }
