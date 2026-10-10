@@ -353,6 +353,23 @@ class TestBuildMatchRows:
         assert all(r["region"] == platform for r in rows["players"])
         assert all(r["game_name"] for r in rows["players"])
 
+    def test_bots_are_left_out(self):
+        import copy
+
+        match_data = copy.deepcopy(make_match_data_ranked_game())
+        humans = match_data["info"]["participants"]
+        # Riot gives every bot in a lobby the same puuid
+        for bot in humans[-2:]:
+            bot["puuid"] = "BOT"
+        rows, mock_embed = _build(match_data)
+
+        for table in ("players", "participants", "participant_traits", "participant_units", "unit_items"):
+            assert all(r["puuid"] != "BOT" for r in rows[table]), table
+        assert len(rows["participants"]) == len(humans) - 2
+        # The embedding call only gets the remaining boards, in step with their rows
+        (_, compositions), _ = mock_embed.call_args
+        assert len(compositions) == len(humans) - 2
+
     def test_keeps_duplicate_copies_of_the_same_champion(self):
         import copy
 
@@ -473,11 +490,34 @@ class TestWriteMatches:
         assert "LEFT JOIN `test-project.tft.champions`" in inserts["participant_units"]
         assert "r.name AS item_name" in inserts["unit_items"]
         assert "LEFT JOIN `test-project.tft.items`" in inserts["unit_items"]
-        for table in ("participants", "participant_traits", "matches"):
+        for table in ("participant_traits", "matches"):
             assert "JOIN" not in inserts[table]
         # The rows themselves leave the names to the insert
         assert all("champion_name" not in r for r in fake_bq.staged("participant_units"))
         assert all("item_name" not in r for r in fake_bq.staged("unit_items"))
+
+    def test_participants_get_their_board_summary_from_the_staged_units_and_items(self, fake_bq):
+        _write(fake_bq, {"m": json.dumps(make_match_data_ranked_game())})
+
+        (sql, _), = fake_bq.queries
+        statements = [s.strip() for s in sql.split(";") if s.strip()]
+        (insert,) = [
+            s for s in statements if s.startswith("INSERT INTO `test-project.tft.participants`")
+        ]
+        staging = {
+            destination.rsplit(".", 1)[1].rsplit("_", 1)[0]: destination
+            for destination in fake_bq.loads
+        }
+        assert f"FROM `{staging['participants']}` AS s" in insert
+        assert f"FROM `{staging['participant_units']}` AS u" in insert
+        assert f"FROM `{staging['unit_items']}` AS i" in insert
+        assert "COALESCE(ci.completed_items, 0) AS completed_items" in insert
+        assert "COALESCE(bc.board_cost, 0) AS board_cost" in insert
+        # The parser leaves both to the insert
+        assert all(
+            "completed_items" not in r and "board_cost" not in r
+            for r in fake_bq.staged("participants")
+        )
 
     def test_is_one_transaction(self, fake_bq):
         _write(fake_bq, {"m": json.dumps(make_match_data_ranked_game())})

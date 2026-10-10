@@ -4,7 +4,8 @@ Populate the champions, traits, and items reference tables for the current set.
 Rows are keyed on Riot's api name (e.g. DA_ArchangelsStaff), which match payloads
 use and which stays the same across patches. Each run adds new rows and updates
 existing ones, and never deletes, so names still resolve for older patches' stats.
-It then refreshes the names stored on the match tables (db.reference_names).
+It then refreshes the names, costs and item counts stored on the match tables
+(db.reference_names).
 Source: the root tft-*.json Data Dragon files (version 16.19.1).
 
 Usage:
@@ -99,7 +100,7 @@ def seed_reference_data(client: bigquery.Client) -> None:
         print(f"Seeding {len(rows)} set {TFT_SET} {table}...")
         with staged(client, {table: rows}) as staging:
             run_query(client, merge_reference_sql(client, table, staging[table]))
-    print("Backfilling champion and item names on the match tables...")
+    print("Refreshing champion/item names and board summaries on the match tables...")
     backfill_names(client)
 
 

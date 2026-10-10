@@ -5,12 +5,15 @@ the champions/items reference tables. write_match_rows copies them in as it inse
 (insert_with_names_sql), and backfill_names refreshes rows already stored: ones written
 before their reference row existed, before the columns were added, or before a name
 changed on reseed. An api name missing from its reference table leaves the name NULL.
+backfill_names also refreshes participants' board summary (db.board_summary), which
+comes from the reference tables too.
 """
 
 from collections.abc import Sequence
 
 from google.cloud import bigquery
 
+from db.board_summary import backfill_board_summary_sql
 from db.bq import column_names, run_query, table_ref
 
 # Per-match table -> (name column, api name column, reference table)
@@ -18,6 +21,9 @@ NAME_COLUMNS: dict[str, tuple[str, str, str]] = {
     "participant_units": ("champion_name", "champion", "champions"),
     "unit_items": ("item_name", "item", "items"),
 }
+
+# What backfill_names refreshes: the name columns, plus participants' board summary
+BACKFILL_TABLES = (*NAME_COLUMNS, "participants")
 
 
 def insert_with_names_sql(client: bigquery.Client, name: str, staging_id: str) -> str:
@@ -52,7 +58,10 @@ def backfill_names_sql(client: bigquery.Client, name: str) -> str:
 def backfill_names(
     client: bigquery.Client, tables: Sequence[str] | None = None
 ) -> None:
-    """Refresh the name columns of `tables` (default all of NAME_COLUMNS). Safe to repeat,
-    and to run alongside an ingest: run_query retries concurrent DML aborts."""
-    script = "\n".join(backfill_names_sql(client, name) for name in tables or NAME_COLUMNS)
+    """Refresh the reference-derived columns of `tables` (default all of BACKFILL_TABLES).
+    Safe to repeat, and to run alongside an ingest: run_query retries concurrent DML aborts."""
+    script = "\n".join(
+        backfill_board_summary_sql(client) if name == "participants" else backfill_names_sql(client, name)
+        for name in tables or BACKFILL_TABLES
+    )
     run_query(client, script)

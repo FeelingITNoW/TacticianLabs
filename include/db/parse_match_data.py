@@ -5,6 +5,7 @@ from google import genai
 from google.cloud import bigquery
 
 from data_aggregation.data_aggregation import merge_totals_sql
+from db.board_summary import insert_participants_sql
 from db.bq import column_names, insert_from_staging_sql, run_query, staged, table_ref
 from db.reference_names import NAME_COLUMNS, insert_with_names_sql
 from db.upsert_players import merge_players_sql
@@ -24,6 +25,10 @@ MATCH_CHILD_TABLES = (
     "participants",
 )
 
+# Riot gives every bot (they fill normal lobbies) this same puuid, so their rows would
+# share a (match_id, puuid) key. They aren't players, so they aren't stored.
+BOT_PUUID = "BOT"
+
 
 def build_match_rows(
     match_data: dict,
@@ -33,7 +38,8 @@ def build_match_rows(
 ) -> dict[str, list[dict]] | None:
     """Turn one Riot match payload into rows keyed by BigQuery table name.
 
-    Returns None for a game whose queue isn't in `queues` (ranked only by default). Calls Gemini once to embed
+    Returns None for a game whose queue isn't in `queues` (ranked only by default). Bots
+    are left out, so a normal game with bots has fewer than 8 participants. Calls Gemini once to embed
     every participant's board (units with star level and items, plus traits), or not at all when google_genai_client is None, in
     which case the participant rows have no embedding.
     """
@@ -60,6 +66,8 @@ def build_match_rows(
     compositions: list[tuple[list[Unit], list[str]]] = []
     for participant in info["participants"]:
         puuid = participant["puuid"]
+        if puuid == BOT_PUUID:
+            continue
         keys = {"match_id": match_id, "puuid": puuid, "played_at": played_at}
         # Lobbies include players outside the tiers we crawl, so every participant
         # gets a players row (participants.puuid references players).
@@ -180,7 +188,10 @@ def write_match_rows(
         statements = [*merge_totals_sql(client, staging), delete_sql("matches")]
         for name in MATCH_CHILD_TABLES:
             statements.append(delete_sql(name))
-            if name in staging:
+            if name == "participants" and name in staging:
+                # With completed_items and board_cost, from the staged units and items
+                statements.append(insert_participants_sql(client, staging))
+            elif name in staging:
                 # participant_units and unit_items also get their display names
                 insert_sql = (
                     insert_with_names_sql if name in NAME_COLUMNS else insert_from_staging_sql
