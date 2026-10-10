@@ -28,5 +28,6 @@
   },
   {"name": "carries", "type": "STRING", "mode": "REPEATED", "description": "Units that usually hold 2 or more items, most itemized first"},
   {"name": "sample_size", "type": "INT64", "description": "Boards the clusters were fitted on; every board in the patch is then assigned to its nearest comp"},
-  {"name": "clustered_at", "type": "TIMESTAMP"}
+  {"name": "clustered_at", "type": "TIMESTAMP"},
+  {"name": "category", "type": "STRING", "description": "1_cost_reroll, 2_cost_reroll, 3_cost_reroll, fast_8 or fast_9, from the carries' costs and average star levels; NULL when no carry has a known cost"}
 ]

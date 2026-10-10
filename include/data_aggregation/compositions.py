@@ -18,12 +18,14 @@ similar than the comp's own boards are. A cluster whose own boards are not alike
 reported as a comp. The comps' counters are exact: they come
 from every assigned board, not from the sample.
 
-Star levels play no part in the vectors; they are only reported per comp. Only ranked
+Star levels play no part in the vectors; they are only reported per comp, and with
+the carries' costs they give the comp its category (see categorize). Only ranked
 boards are clustered, since the match tables also hold Challengers' normal games.
 """
 
 import hashlib
 from array import array
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -46,6 +48,8 @@ MIN_COHESION = 0.5  # clusters whose threshold is below this aren't comps
 MIN_FREQUENCY = 0.25  # units and traits on fewer of a comp's boards aren't listed
 CORE_FREQUENCY = 0.5  # units on at least this share of a comp's boards give its id
 CARRY_ITEMS = 2.0  # a listed unit holding this many items on average is a carry
+REROLL_STAR = 2.5  # a carry of a reroll cost at this average star level is rerolled for
+REROLL_COSTS = (1, 2, 3)
 ASSIGN_CHUNK = 50_000
 
 UNIT = "u:"
@@ -132,6 +136,15 @@ def fetch_names(client: bigquery.Client) -> dict[str, str]:
         f"SELECT api_name, name FROM `{table_ref(client, 'traits')}`",
     )
     return {row["api_name"]: row["name"] for row in rows if row["name"]}
+
+
+def fetch_costs(client: bigquery.Client) -> dict[str, int]:
+    """Champion costs (1-5) by api name."""
+    rows = run_query(
+        client,
+        f"SELECT api_name, cost FROM `{table_ref(client, 'champions')}` WHERE cost > 0",
+    )
+    return {row["api_name"]: row["cost"] for row in rows}
 
 
 def fetch_boards(client: bigquery.Client, patch: str) -> Boards:
@@ -299,6 +312,31 @@ def _comp_label(names, units, traits, carries) -> str | None:
     return " ".join(parts) or None
 
 
+def categorize(units: list[dict], carries: list[str], costs: dict[str, int]) -> str | None:
+    """How the comp is played, from its carries' costs and average star levels.
+
+    Carries of cost 1-3 that average REROLL_STAR or more are rerolled for, and the
+    cost with the most of them makes it a 1, 2 or 3 cost reroll (a tie goes to the
+    more itemized carry; carries are ordered that way). Otherwise it levels: fast 9
+    when more carries are 5 costs than 4 costs, else fast 8. None when no carry has
+    a known cost.
+    """
+    stars = {u["api_name"]: u["avg_star"] for u in units}
+    known = [c for c in carries if costs.get(c)]
+    if not known:
+        return None
+    rerolled = [
+        c for c in known if costs[c] in REROLL_COSTS and stars.get(c, 0) >= REROLL_STAR
+    ]
+    if rerolled:
+        counts = Counter(costs[c] for c in rerolled)
+        most = max(counts.values())
+        cost = next(costs[c] for c in rerolled if counts[costs[c]] == most)
+        return f"{cost}_cost_reroll"
+    counts = Counter(costs[c] for c in known)
+    return "fast_9" if counts[5] > counts[4] else "fast_8"
+
+
 def _comp_id(units: list[dict], carries: list[str]) -> str:
     core = [u["api_name"] for u in units if u["frequency"] >= CORE_FREQUENCY]
     core = core or [u["api_name"] for u in units[:3]]
@@ -314,8 +352,10 @@ def summarize(
     patch: str,
     sample_size: int,
     clustered_at: datetime | None = None,
+    costs: dict[str, int] | None = None,
 ) -> tuple[list[dict], list[dict]]:
-    """Rows for `compositions` and `participant_compositions`.
+    """Rows for `compositions` and `participant_compositions`. `costs` (champion api
+    name -> cost) gives each comp its category.
 
     Comps are numbered biggest first, so when two share a hash the bigger keeps
     the plain id and the other gets "-2".
@@ -347,6 +387,7 @@ def summarize(
                 "patch": patch,
                 "comp_id": comp_id,
                 "label": _comp_label(names, units, traits, carries) or comp_id,
+                "category": categorize(units, carries, costs or {}),
                 "boards": int(len(members)),
                 "matches": int(np.unique(boards.match_ids[members]).size),
                 "placement_sum": int(placements.sum()),
@@ -421,7 +462,13 @@ def cluster_patch(
 
     labels, similarity = assign(boards.vectors, clusters)
     comps, assignments = summarize(
-        boards, labels, similarity, fetch_names(client), patch, clusters.sample_size
+        boards,
+        labels,
+        similarity,
+        fetch_names(client),
+        patch,
+        clusters.sample_size,
+        costs=fetch_costs(client),
     )
     print(
         f"Patch {patch}: {len(comps)} comps, {len(assignments)} of {len(boards)} "

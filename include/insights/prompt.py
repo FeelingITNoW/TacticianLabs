@@ -47,6 +47,9 @@ GLOSSARY = """
 - clustered_at: time when the composition was determined via clustering.
 - label: the assigned name of the compostion.
 - carries: the predetermined carries of teh composition.
+- category (current_composition_stats): how the comp is played, one of 1_cost_reroll, 2_cost_reroll,
+  3_cost_reroll, fast_8 or fast_9. Reroll means its 1/2/3-cost carries are usually 3-starred; otherwise
+  fast_9 if most carries are 5-costs, else fast_8. Filter on it instead of working it out from units.
 
 - item_type (current_item_stats; item_type, item_a_type and item_b_type on the champion-item views): artifact,
   radiant, component, emblem or other. Radiant items are named "Radiant <item>" and artifacts are

@@ -6,6 +6,7 @@ SELECT
   c.patch,
   c.comp_id,
   c.label,
+  c.category,
   c.boards AS games,
   SAFE_DIVIDE(c.win_count, c.boards) AS win_rate,
   SAFE_DIVIDE(c.top4_count, c.boards) AS top4_rate,

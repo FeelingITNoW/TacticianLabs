@@ -60,7 +60,8 @@ def main(argv: list[str] | None = None) -> int:
             average = comp["placement_sum"] / comp["boards"]
             carries = ", ".join(comp["carries"]) or "-"
             print(
-                f"{comp['comp_id']:>14}  {comp['label']:<30} boards={comp['boards']:<7} "
+                f"{comp['comp_id']:>14}  {comp['label']:<30} {comp['category'] or '-':<14} "
+                f"boards={comp['boards']:<7} "
                 f"avg_place={average:.2f}  carries: {carries}"
             )
     return 0 if comps else 1

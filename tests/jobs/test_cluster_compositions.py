@@ -11,6 +11,7 @@ from data_aggregation.compositions import (
     BOARDS_SQL,
     assign,
     build_boards,
+    categorize,
     cluster_patch,
     fetch_boards,
     fit_clusters,
@@ -307,6 +308,64 @@ class TestSummarize:
 
         assert comps == [] and assignments == []
 
+    def test_category_comes_from_the_carries_costs(self):
+        boards = self.boards()
+        similarity = np.full(len(boards), 0.9, dtype=np.float32)
+
+        (comp,), _ = summarize(
+            boards, np.array([0, 0, 0, -1]), similarity, {}, PATCH, 99, costs={"Ahri": 1}
+        )
+        # Ahri averages 2.67 stars over the comp's boards
+        assert comp["category"] == "1_cost_reroll"
+
+        (comp,), _ = self.summary([0, 0, 0, -1])
+        assert comp["category"] is None  # no costs known
+
+
+def unit(name: str, star: float, items: float = 3.0) -> dict:
+    return {"api_name": name, "frequency": 1.0, "avg_items": items, "avg_star": star}
+
+
+class TestCategorize:
+    COSTS = {"One": 1, "OneB": 1, "Two": 2, "Three": 3, "Four": 4, "FourB": 4, "Five": 5, "FiveB": 5}
+
+    def category(self, *units):
+        return categorize(list(units), [u["api_name"] for u in units], self.COSTS)
+
+    @pytest.mark.parametrize("name, expected", [
+        ("One", "1_cost_reroll"),
+        ("Two", "2_cost_reroll"),
+        ("Three", "3_cost_reroll"),
+    ])
+    def test_a_three_starred_low_cost_carry_is_a_reroll(self, name, expected):
+        assert self.category(unit(name, 2.8), unit("Four", 2.0)) == expected
+
+    def test_the_cost_with_the_most_three_starred_carries_wins(self):
+        assert self.category(unit("Two", 2.9), unit("One", 2.7), unit("OneB", 2.6)) == "1_cost_reroll"
+
+    def test_a_tie_goes_to_the_more_itemized_carry(self):
+        # Carries come most itemized first
+        assert self.category(unit("Three", 2.6), unit("One", 2.9)) == "3_cost_reroll"
+
+    def test_a_two_starred_low_cost_carry_is_not_a_reroll(self):
+        assert self.category(unit("Three", 2.2), unit("Four", 2.0)) == "fast_8"
+
+    def test_four_cost_carries_are_fast_8(self):
+        assert self.category(unit("Four", 2.0), unit("FourB", 1.9), unit("Five", 1.5)) == "fast_8"
+
+    def test_more_five_cost_carries_is_fast_9(self):
+        assert self.category(unit("Five", 1.8), unit("FiveB", 1.6), unit("Four", 2.0)) == "fast_9"
+
+    def test_an_even_split_stays_fast_8(self):
+        assert self.category(unit("Five", 1.8), unit("Four", 2.0)) == "fast_8"
+
+    def test_carries_with_unknown_costs_are_ignored(self):
+        assert self.category(unit("Summon", 3.0), unit("Five", 1.5)) == "fast_9"
+        assert self.category(unit("Summon", 3.0)) is None
+
+    def test_no_carries(self):
+        assert categorize([unit("One", 3.0, items=0.5)], [], self.COSTS) is None
+
 
 class TestWrite:
     def rows(self):
@@ -348,6 +407,7 @@ class TestWrite:
 class TestClusterPatch:
     def feed(self, fake_bq, monkeypatch, rows):
         monkeypatch.setattr(compositions, "fetch_names", lambda client: {})
+        monkeypatch.setattr(compositions, "fetch_costs", lambda client: {"A0": 4})
         fake_bq.query_rows = rows
 
     def synthetic(self):
@@ -361,6 +421,8 @@ class TestClusterPatch:
 
         assert len(comps) == 2
         assert sum(c["boards"] for c in comps) <= 200
+        # A0, comp A's 3-item carry, is a 4 cost; comp B's carry has no known cost
+        assert sorted(c["category"] or "" for c in comps) == ["", "fast_8"]
         assert len(fake_bq.staged("compositions")) == 2
         assert any("DELETE FROM" in sql for sql, _ in fake_bq.queries)
 

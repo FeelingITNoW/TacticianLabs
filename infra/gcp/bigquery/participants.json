@@ -7,5 +7,7 @@
   {"name": "gold_left", "type": "INT64"},
   {"name": "last_round", "type": "INT64"},
   {"name": "total_damage_to_players", "type": "INT64"},
-  {"name": "embedding", "type": "FLOAT64", "mode": "REPEATED", "description": "768-dim gemini-embedding-001 vector of the board"}
+  {"name": "embedding", "type": "FLOAT64", "mode": "REPEATED", "description": "768-dim gemini-embedding-001 vector of the board"},
+  {"name": "completed_items", "type": "INT64", "description": "Items held across the board that aren't components (items.item_type), filled at write time and refreshed by jobs.backfill_names"},
+  {"name": "board_cost", "type": "INT64", "description": "Gold value of the board's units: champions.cost times 3^(star - 1) per unit, filled at write time and refreshed by jobs.backfill_names"}
 ]
