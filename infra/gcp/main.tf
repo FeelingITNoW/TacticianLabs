@@ -192,6 +192,12 @@ resource "google_cloud_run_v2_job" "ingest" {
           value = var.skip_embeddings ? "1" : "0"
         }
 
+        # Read by insights.nl_to_sql, not by the ingest itself
+        env {
+          name  = "GEMINI_SQL_MODEL"
+          value = var.gemini_sql_model
+        }
+
         dynamic "env" {
           for_each = local.secret_env
           content {

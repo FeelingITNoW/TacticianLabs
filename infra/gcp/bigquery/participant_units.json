@@ -5,5 +5,6 @@
   {"name": "slot", "type": "INT64", "mode": "REQUIRED", "description": "Position in Riot units array; keeps duplicate champions apart"},
   {"name": "champion", "type": "STRING", "mode": "REQUIRED", "description": "Riot character_id, e.g. TFT16_Jinx"},
   {"name": "star", "type": "INT64", "description": "Riot unit tier (star level)"},
-  {"name": "rarity", "type": "INT64"}
+  {"name": "rarity", "type": "INT64"},
+  {"name": "champion_name", "type": "STRING", "description": "champions.name, copied at write time and refreshed by jobs.backfill_names; NULL if the api name isn't in champions"}
 ]

@@ -3,6 +3,7 @@
 from datetime import date
 from types import SimpleNamespace
 
+import pytest
 from google.api_core import exceptions
 
 from insights import nl_to_sql, prompt
@@ -10,13 +11,22 @@ from insights import nl_to_sql, prompt
 PROJECT = "test-project"
 
 
+@pytest.fixture(autouse=True)
+def clear_allowed_cache():
+    nl_to_sql._allowed.clear()
+
+
 class FakeClient:
     """Stands in for bigquery.Client: dry runs report `tables`, real runs return `rows`."""
 
     project = PROJECT
 
-    def __init__(self, tables=None, rows=None, statement_type="SELECT", error=None):
+    def __init__(
+        self, tables=None, rows=None, statement_type="SELECT", error=None, base=("champions",)
+    ):
         self.tables = tables if tables is not None else ["current_champion_stats"]
+        # What a dry run over any one view reports: the tables that view reads
+        self.base = list(base)
         self.rows = rows or []
         self.statement_type = statement_type
         self.error = error
@@ -26,13 +36,14 @@ class FakeClient:
         if job_config is not None and job_config.dry_run:
             if self.error:
                 raise self.error
+            tables = self.base if sql.startswith("SELECT * FROM `") else self.tables
             return SimpleNamespace(
                 statement_type=self.statement_type,
                 referenced_tables=[
                     SimpleNamespace(
                         project=PROJECT, dataset_id=nl_to_sql.DATASET, table_id=t
                     )
-                    for t in self.tables
+                    for t in tables
                 ],
             )
         self.ran.append(sql)
@@ -98,3 +109,17 @@ def test_context_names_every_view_and_section(monkeypatch):
         assert f"{view}(games INT64)" in context
     assert prompt.GLOSSARY.strip() in context
     assert f"{PROJECT}.{nl_to_sql.DATASET}.current_champion_stats" in context
+
+
+def test_allows_a_query_whose_dry_run_lists_the_views_base_tables():
+    # BigQuery expands views, so a dry run over a view reports what it reads, not the view
+    client = FakeClient(
+        tables=["champion_item_totals", "champions", "items"],
+        base=("champion_item_totals", "champions", "items"),
+        rows=[{"n": 1}],
+    )
+
+    rows = nl_to_sql.run_sql(client, "SELECT 1", [])
+
+    assert rows == [{"n": 1}]
+    assert client.ran == ["SELECT 1"]

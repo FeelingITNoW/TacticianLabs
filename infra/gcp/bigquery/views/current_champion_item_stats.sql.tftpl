@@ -1,4 +1,4 @@
-SELECT s.*, ch.name AS champion_name, i.name AS item_name
+SELECT s.*, ch.name AS champion_name, i.name AS item_name, i.item_type
 FROM `${project}.${dataset}.champion_item_stats` AS s
 LEFT JOIN `${project}.${dataset}.champions` AS ch ON ch.api_name = s.champion
 LEFT JOIN `${project}.${dataset}.items` AS i ON i.api_name = s.item

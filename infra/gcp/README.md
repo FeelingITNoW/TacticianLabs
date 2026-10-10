@@ -93,6 +93,14 @@ Ranked games (queue 1100) are recorded from every crawled tier. Normal games (10
 
 Each routing region ingests up to 2000 new matches per run (`ROUTING_MATCH_TARGET`), in priority order: every Challenger on its platforms, then every Grandmaster (both always in full, even past 2000), then Masters, round-robin by LP rank across the platforms, until the target is reached. Only matches not already in `matches` or `rejected_matches` count, and some are rejected after fetching, so slightly fewer than 2000 are recorded. Every Master still gets a `players` row.
 
+### Item types
+
+`items.item_type` (artifact, radiant, component, emblem or other) is read from the api name when the reference data is seeded, and `current_item_stats`, `current_champion_item_stats` and `current_champion_item_pair_stats` expose it. After pulling the change that added it:
+```sh
+cd infra/gcp && terraform apply                    # adds the column and updates the three views
+PYTHONPATH=include python -m db.seed_reference_data   # fills item_type on the existing rows
+```
+
 ### Embeddings
 
 The ingest job runs with `SKIP_EMBEDDINGS=1` (Terraform variable `skip_embeddings`, default `true`): it writes `participants` rows with an empty `embedding` and never calls Gemini, since nothing reads the embeddings yet and comp clustering uses its own vectors. To turn them back on, set `skip_embeddings = false` and apply. To fill in the gaps, run `python -m jobs.load_gcs_matches --prefix tft/matches/<version>/<date>/ --reload` for each day, which re-embeds from the GCS archive. The `GEMINI_API_KEY` secret stays in place so that switch is all it takes.
