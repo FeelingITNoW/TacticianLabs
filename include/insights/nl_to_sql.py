@@ -29,6 +29,7 @@ from insights.item_trios import item_trios
 MAX_TOOL_CALLS = 5
 
 _contexts: dict[str, str] = {}
+_allowed: dict[str, set[str]] = {}
 
 
 @dataclass
@@ -39,7 +40,27 @@ class Answer:
 
 
 def allowed_tables(client: bigquery.Client) -> set[str]:
-    return {table_ref(client, view) for view in prompt.VIEWS}
+    """The views, plus the tables they read.
+
+    A dry run reports the tables a query reads with views expanded, so a query over a
+    view lists the view's base tables (champion_totals, items, ...), never the view. A
+    query may therefore touch only what the views already expose.
+    """
+    key = f"{client.project}.{DATASET}"
+    if key not in _allowed:
+        allowed = {table_ref(client, view) for view in prompt.VIEWS}
+        for view in prompt.VIEWS:
+            dry = client.query(
+                f"SELECT * FROM `{table_ref(client, view)}`",
+                job_config=bigquery.QueryJobConfig(dry_run=True),
+            )
+            allowed |= _referenced(dry)
+        _allowed[key] = allowed
+    return _allowed[key]
+
+
+def _referenced(dry) -> set[str]:
+    return {f"{t.project}.{t.dataset_id}.{t.table_id}" for t in dry.referenced_tables}
 
 
 def build_context(client: bigquery.Client) -> str:
@@ -84,13 +105,12 @@ def run_sql(client: bigquery.Client, query: str, log: list[str]) -> list[dict]:
         dry = client.query(query, job_config=bigquery.QueryJobConfig(dry_run=True))
         if dry.statement_type != "SELECT":
             return [{"error": "Only a single SELECT statement is allowed."}]
-        used = {
-            f"{t.project}.{t.dataset_id}.{t.table_id}" for t in dry.referenced_tables
-        }
+        used = _referenced(dry)
         if not used <= allowed_tables(client):
             return [
                 {
-                    "error": f"Only these views may be queried: {sorted(allowed_tables(client))}"
+                    "error": "Only these views may be queried: "
+                    f"{[table_ref(client, view) for view in prompt.VIEWS]}"
                 }
             ]
         log.append(query)
@@ -138,7 +158,11 @@ def ask(
             ),
         ),
     )
-    answer.text = response.text or ""
+    # No text means the model was still calling tools when it hit MAX_TOOL_CALLS
+    answer.text = response.text or (
+        f"No answer: the model used all {MAX_TOOL_CALLS} tool calls without finishing. "
+        "Its queries are below."
+    )
     return answer
 
 

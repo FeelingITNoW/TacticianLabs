@@ -32,6 +32,12 @@ variable "skip_embeddings" {
   description = "Skip the per-board Gemini embedding at ingest (participants.embedding stays empty). Nothing reads the embeddings yet, and `python -m jobs.load_gcs_matches --reload` backfills them from the GCS archive. Set false to embed again."
 }
 
+variable "gemini_sql_model" {
+  type        = string
+  default     = "gemini-3.5-flash-lite"
+  description = "Gemini model that writes SQL for insights.nl_to_sql. Set on the ingest job, whose image carries the agent."
+}
+
 variable "cluster_schedule" {
   type        = string
   default     = "0 15 * * *"

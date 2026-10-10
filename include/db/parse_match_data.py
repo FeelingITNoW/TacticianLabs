@@ -6,6 +6,7 @@ from google.cloud import bigquery
 
 from data_aggregation.data_aggregation import merge_totals_sql
 from db.bq import column_names, insert_from_staging_sql, run_query, staged, table_ref
+from db.reference_names import NAME_COLUMNS, insert_with_names_sql
 from db.upsert_players import merge_players_sql
 from google_embedding.embedding_call import Unit, get_embeddings
 from riot_api.constants import (
@@ -180,7 +181,11 @@ def write_match_rows(
         for name in MATCH_CHILD_TABLES:
             statements.append(delete_sql(name))
             if name in staging:
-                statements.append(insert_from_staging_sql(client, name, staging[name]))
+                # participant_units and unit_items also get their display names
+                insert_sql = (
+                    insert_with_names_sql if name in NAME_COLUMNS else insert_from_staging_sql
+                )
+                statements.append(insert_sql(client, name, staging[name]))
         statements.append(merge_players_sql(client, staging["players"]))
         statements.append(insert_from_staging_sql(client, "matches", staging["matches"]))
         script = "\n".join(["BEGIN TRANSACTION;", *statements, "COMMIT TRANSACTION;"])

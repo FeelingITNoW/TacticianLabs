@@ -459,6 +459,26 @@ class TestWriteMatches:
             assert f"INSERT INTO `test-project.tft.{table}`" in sql
         assert "MERGE `test-project.tft.players`" in sql
 
+    def test_units_and_items_get_their_names_from_the_reference_tables(self, fake_bq):
+        _write(fake_bq, {"m": json.dumps(make_match_data_ranked_game())})
+
+        (sql, _), = fake_bq.queries
+        statements = [s.strip() for s in sql.split(";") if s.strip()]
+        inserts = {
+            s.split("`")[1].rsplit(".", 1)[1]: s
+            for s in statements
+            if s.startswith("INSERT INTO")
+        }
+        assert "r.name AS champion_name" in inserts["participant_units"]
+        assert "LEFT JOIN `test-project.tft.champions`" in inserts["participant_units"]
+        assert "r.name AS item_name" in inserts["unit_items"]
+        assert "LEFT JOIN `test-project.tft.items`" in inserts["unit_items"]
+        for table in ("participants", "participant_traits", "matches"):
+            assert "JOIN" not in inserts[table]
+        # The rows themselves leave the names to the insert
+        assert all("champion_name" not in r for r in fake_bq.staged("participant_units"))
+        assert all("item_name" not in r for r in fake_bq.staged("unit_items"))
+
     def test_is_one_transaction(self, fake_bq):
         _write(fake_bq, {"m": json.dumps(make_match_data_ranked_game())})
 
