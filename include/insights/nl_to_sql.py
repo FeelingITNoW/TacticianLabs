@@ -26,7 +26,7 @@ from insights import prompt
 from insights.common import MAX_BYTES_BILLED, MAX_ROWS, json_rows
 from insights.item_trios import item_trios
 
-MAX_TOOL_CALLS = 5
+MAX_TOOL_CALLS = 8
 
 _contexts: dict[str, str] = {}
 _allowed: dict[str, set[str]] = {}
