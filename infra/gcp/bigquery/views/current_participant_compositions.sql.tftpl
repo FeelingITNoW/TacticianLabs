@@ -1,0 +1,32 @@
+WITH latest AS (
+  SELECT patch, last_played_at FROM `${project}.${dataset}.patch_totals` ORDER BY last_played_at DESC LIMIT 1
+)
+SELECT
+  p.match_id,
+  p.puuid,
+  p.played_at,
+  m.game_version AS patch,
+  p.placement,
+  p.placement <= 4 AS top4,
+  p.placement = 1 AS won,
+  p.level,
+  p.gold_left,
+  p.last_round,
+  p.total_damage_to_players,
+  p.completed_items,
+  p.board_cost,
+  pc.comp_id,
+  pc.variant_id,
+  c.label AS comp_label,
+  c.category AS comp_category,
+  pc.similarity
+FROM `${project}.${dataset}.participants` AS p
+JOIN `${project}.${dataset}.matches` AS m ON m.match_id = p.match_id
+LEFT JOIN `${project}.${dataset}.participant_compositions` AS pc
+  ON pc.match_id = p.match_id AND pc.puuid = p.puuid AND pc.patch = m.game_version
+LEFT JOIN `${project}.${dataset}.compositions` AS c
+  ON c.patch = pc.patch AND c.comp_id = pc.comp_id
+WHERE m.queue_id = 1100
+  AND m.game_version = (SELECT patch FROM latest)
+  AND m.played_at >= TIMESTAMP_SUB((SELECT last_played_at FROM latest), INTERVAL 30 DAY)
+  AND p.played_at >= TIMESTAMP_SUB((SELECT last_played_at FROM latest), INTERVAL 30 DAY)

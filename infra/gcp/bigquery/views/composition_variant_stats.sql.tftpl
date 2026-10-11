@@ -1,0 +1,26 @@
+-- Rates for one comp variant per patch, derived from exact integer counters (same definitions as composition_stats).
+--   share_of_comp: the share of the comp's boards that fit this variant
+--   diff: what sets the variant apart from its comp (added = more common in the variant, removed = less common)
+-- Boards in none of a comp's variants are the comp's base build: they are in composition_stats but in no row here.
+SELECT
+  v.patch,
+  v.comp_id,
+  c.label AS comp_label,
+  c.category AS comp_category,
+  v.variant_id,
+  v.label,
+  v.boards AS games,
+  SAFE_DIVIDE(v.win_count, v.boards) AS win_rate,
+  SAFE_DIVIDE(v.top4_count, v.boards) AS top4_rate,
+  SAFE_DIVIDE(v.placement_sum, v.boards) AS average_placement,
+  SAFE_DIVIDE(v.boards, v.matches) AS play_rate,
+  SAFE_DIVIDE(v.boards, p.matches) AS frequency,
+  SAFE_DIVIDE(v.boards, c.boards) AS share_of_comp,
+  v.matches,
+  v.diff,
+  v.units,
+  v.traits,
+  v.clustered_at
+FROM `${project}.${dataset}.composition_variants` AS v
+JOIN `${project}.${dataset}.compositions` AS c USING (patch, comp_id)
+JOIN `${project}.${dataset}.patch_totals` AS p USING (patch)
