@@ -52,9 +52,10 @@ GLOSSARY = """
   fast_9 if most carries are 5-costs, else fast_8. Filter on it instead of working it out from units.
 
 - item_type (current_item_stats; item_type, item_a_type and item_b_type on the champion-item views): artifact,
-  radiant, component, emblem or other. Radiant items are named "Radiant <item>" and artifacts are
-  one-of-a-kind items such as Fishbones. other holds the standard completed items plus boosters,
-  consumables, chests and the Tactician's items, so filter by item_type instead of guessing from names.
+  radiant, component, emblem, completed or misc. Radiant items are named "Radiant <item>" and artifacts
+  are one-of-a-kind items such as Fishbones. completed is the standard completed items (and the
+  Tactician's items); misc is boosters, potions, consumables, chests, Masterwork Upgrade and Reforger.
+  Filter by item_type instead of guessing from names.
 - current_champion_item_pair_stats: two items on the same unit. Each pair is stored once with
   item_a <= item_b by api name, so look for it in both columns; two copies of one item are allowed
 - Full 3-item builds are not in any view. Call the `trios` tool with the champion's name for those.

@@ -10,11 +10,27 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LeaderboardRouteImport } from './routes/leaderboard'
+import { Route as ItemsRouteImport } from './routes/items'
+import { Route as ExplorerRouteImport } from './routes/explorer'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as UnitsIndexRouteImport } from './routes/units/index'
+import { Route as CompositionsIndexRouteImport } from './routes/compositions/index'
+import { Route as UnitsUnitIdRouteImport } from './routes/units/$unitId'
+import { Route as CompositionsCompIdRouteImport } from './routes/compositions/$compId'
 
 const LeaderboardRoute = LeaderboardRouteImport.update({
   id: '/leaderboard',
   path: '/leaderboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ItemsRoute = ItemsRouteImport.update({
+  id: '/items',
+  path: '/items',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExplorerRoute = ExplorerRouteImport.update({
+  id: '/explorer',
+  path: '/explorer',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -22,31 +38,100 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const UnitsIndexRoute = UnitsIndexRouteImport.update({
+  id: '/units/',
+  path: '/units/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CompositionsIndexRoute = CompositionsIndexRouteImport.update({
+  id: '/compositions/',
+  path: '/compositions/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UnitsUnitIdRoute = UnitsUnitIdRouteImport.update({
+  id: '/units/$unitId',
+  path: '/units/$unitId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CompositionsCompIdRoute = CompositionsCompIdRouteImport.update({
+  id: '/compositions/$compId',
+  path: '/compositions/$compId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/explorer': typeof ExplorerRoute
+  '/items': typeof ItemsRoute
   '/leaderboard': typeof LeaderboardRoute
+  '/compositions/$compId': typeof CompositionsCompIdRoute
+  '/units/$unitId': typeof UnitsUnitIdRoute
+  '/compositions/': typeof CompositionsIndexRoute
+  '/units/': typeof UnitsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/explorer': typeof ExplorerRoute
+  '/items': typeof ItemsRoute
   '/leaderboard': typeof LeaderboardRoute
+  '/compositions/$compId': typeof CompositionsCompIdRoute
+  '/units/$unitId': typeof UnitsUnitIdRoute
+  '/compositions': typeof CompositionsIndexRoute
+  '/units': typeof UnitsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/explorer': typeof ExplorerRoute
+  '/items': typeof ItemsRoute
   '/leaderboard': typeof LeaderboardRoute
+  '/compositions/$compId': typeof CompositionsCompIdRoute
+  '/units/$unitId': typeof UnitsUnitIdRoute
+  '/compositions/': typeof CompositionsIndexRoute
+  '/units/': typeof UnitsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/leaderboard'
+  fullPaths:
+    | '/'
+    | '/explorer'
+    | '/items'
+    | '/leaderboard'
+    | '/compositions/$compId'
+    | '/units/$unitId'
+    | '/compositions/'
+    | '/units/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/leaderboard'
-  id: '__root__' | '/' | '/leaderboard'
+  to:
+    | '/'
+    | '/explorer'
+    | '/items'
+    | '/leaderboard'
+    | '/compositions/$compId'
+    | '/units/$unitId'
+    | '/compositions'
+    | '/units'
+  id:
+    | '__root__'
+    | '/'
+    | '/explorer'
+    | '/items'
+    | '/leaderboard'
+    | '/compositions/$compId'
+    | '/units/$unitId'
+    | '/compositions/'
+    | '/units/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ExplorerRoute: typeof ExplorerRoute
+  ItemsRoute: typeof ItemsRoute
   LeaderboardRoute: typeof LeaderboardRoute
+  CompositionsCompIdRoute: typeof CompositionsCompIdRoute
+  UnitsUnitIdRoute: typeof UnitsUnitIdRoute
+  CompositionsIndexRoute: typeof CompositionsIndexRoute
+  UnitsIndexRoute: typeof UnitsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -58,6 +143,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LeaderboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/items': {
+      id: '/items'
+      path: '/items'
+      fullPath: '/items'
+      preLoaderRoute: typeof ItemsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/explorer': {
+      id: '/explorer'
+      path: '/explorer'
+      fullPath: '/explorer'
+      preLoaderRoute: typeof ExplorerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -65,12 +164,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/units/': {
+      id: '/units/'
+      path: '/units'
+      fullPath: '/units/'
+      preLoaderRoute: typeof UnitsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/compositions/': {
+      id: '/compositions/'
+      path: '/compositions'
+      fullPath: '/compositions/'
+      preLoaderRoute: typeof CompositionsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/units/$unitId': {
+      id: '/units/$unitId'
+      path: '/units/$unitId'
+      fullPath: '/units/$unitId'
+      preLoaderRoute: typeof UnitsUnitIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/compositions/$compId': {
+      id: '/compositions/$compId'
+      path: '/compositions/$compId'
+      fullPath: '/compositions/$compId'
+      preLoaderRoute: typeof CompositionsCompIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ExplorerRoute: ExplorerRoute,
+  ItemsRoute: ItemsRoute,
   LeaderboardRoute: LeaderboardRoute,
+  CompositionsCompIdRoute: CompositionsCompIdRoute,
+  UnitsUnitIdRoute: UnitsUnitIdRoute,
+  CompositionsIndexRoute: CompositionsIndexRoute,
+  UnitsIndexRoute: UnitsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

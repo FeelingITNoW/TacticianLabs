@@ -1,6 +1,7 @@
 """Tests for the 3-item build tool (include/insights/item_trios.py)."""
 
 from datetime import date, datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -10,6 +11,14 @@ from insights import item_trios as module
 from insights.item_trios import item_trios
 
 PROJECT = "test-project"
+ROUTINE = (
+    Path(__file__).parents[2]
+    / "infra"
+    / "gcp"
+    / "bigquery"
+    / "routines"
+    / "champion_item_trios.sql.tftpl"
+)
 WINDOW = (
     datetime(2026, 9, 24, tzinfo=timezone.utc),
     datetime(2026, 10, 8, tzinfo=timezone.utc),
@@ -74,15 +83,28 @@ def test_passes_the_resolved_champion_patch_and_window():
     assert rows == [{"games": 40, "day": "2026-10-01"}]
 
 
-def test_the_sql_is_fixed_and_prunes_every_table_by_day():
+def test_the_query_calls_the_shared_function_with_only_parameters():
     sql = module.trios_sql(FakeClient())
 
-    assert "HAVING COUNT(*) = 3" in sql
-    assert "m.queue_id = 1100" in sql
-    assert "m.game_version = @patch" in sql
-    for alias in ("u", "i", "p", "m"):
-        assert f"{alias}.played_at BETWEEN @lo AND @hi" in sql
+    assert "FROM `test-project.tft.champion_item_trios`(@champion, @patch, @lo, @hi, @min_games)" in sql
+    assert "ORDER BY average_placement" in sql
     assert f"LIMIT {module.MAX_TRIOS}" in sql
+    # The model's output keeps display names under the old column names
+    assert "item_a_name AS item_a" in sql
+
+
+def test_the_function_is_fixed_and_prunes_every_table_by_day():
+    """The SQL lives in the BigQuery function; check it still reads one patch's days only."""
+    sql = ROUTINE.read_text()
+
+    assert "HAVING COUNT(*) = 3" in sql
+    assert "m.queue_id = ${ranked_queue_id}" in sql
+    assert "m.game_version = p_patch" in sql
+    for alias in ("u", "i", "p", "m"):
+        assert f"{alias}.played_at BETWEEN p_lo AND p_hi" in sql
+    # Arguments are p_-prefixed: a bare `patch` or `champion` would resolve to the columns
+    for bare in ("= patch", "= champion", "@"):
+        assert bare not in sql.replace("ch.patch = p_patch", "")
 
 
 def test_returns_a_bigquery_error_to_the_model():
