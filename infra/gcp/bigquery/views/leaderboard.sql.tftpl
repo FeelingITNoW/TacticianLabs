@@ -1,0 +1,43 @@
+-- The apex ladder (Challenger, Grandmaster, Master) per platform, best first.
+-- Rows are never deleted when a player drops out of the apex tiers, but every platform's
+-- list is written by one MERGE, so its rows share a timestamp. A row more than 6 hours
+-- older than its platform's newest one is a player who left the list.
+-- Names are NULL for players who have not appeared in an ingested match.
+WITH ladder AS (
+  SELECT
+    r.puuid,
+    p.game_name,
+    p.tag_line,
+    p.region,
+    r.tier,
+    r.`rank`,
+    r.league_points,
+    r.wins,
+    r.losses,
+    r.hot_streak,
+    r.updated_at,
+    MAX(r.updated_at) OVER (PARTITION BY p.region) AS region_refreshed_at
+  FROM `${project}.${dataset}.player_ranked_stats` AS r
+  JOIN `${project}.${dataset}.players` AS p USING (puuid)
+  WHERE r.tier IN ('CHALLENGER', 'GRANDMASTER', 'MASTER')
+)
+SELECT
+  puuid,
+  game_name,
+  tag_line,
+  region,
+  tier,
+  CASE tier WHEN 'CHALLENGER' THEN 0 WHEN 'GRANDMASTER' THEN 1 ELSE 2 END AS tier_order,
+  `rank`,
+  league_points,
+  wins,
+  losses,
+  hot_streak,
+  ROW_NUMBER() OVER (
+    PARTITION BY region
+    ORDER BY CASE tier WHEN 'CHALLENGER' THEN 0 WHEN 'GRANDMASTER' THEN 1 ELSE 2 END,
+      league_points DESC, puuid
+  ) AS region_rank,
+  region_refreshed_at
+FROM ladder
+WHERE updated_at >= TIMESTAMP_SUB(region_refreshed_at, INTERVAL 6 HOUR)

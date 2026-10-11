@@ -30,11 +30,12 @@ SET_ID_PREFIX = "DA_"
 
 
 def _entries(filename: str) -> list[dict]:
+    """The set's entries from a Data Dragon file, each with its versioned `image` path."""
     with open(WORKSPACE_ROOT / filename) as f:
         data = json.load(f)
     return sorted(
         (
-            v
+            {**v, "image": _image_path(data["version"], v)}
             for v in data["data"].values()
             if v["id"].startswith(SET_ID_PREFIX)
             and v["name"]  # skip entries with empty display names
@@ -43,24 +44,46 @@ def _entries(filename: str) -> list[dict]:
     )
 
 
+def _image_path(version: str, entry: dict) -> str:
+    """Where the icon lives under https://ddragon.leagueoflegends.com/cdn/. The file name
+    can't be read from the api name (champions are e.g. TFT18_Xayah_splash_centered_8 and
+    traits Trait_Icon_18_Adaptor), and the version is kept so old rows keep a working URL."""
+    image = entry["image"]
+    return f"{version}/img/{image['group']}/{image['full']}"
+
+
 def _load_champions() -> list[dict]:
     return [
-        {"api_name": v["id"], "name": v["name"], "cost": v.get("cost")}
+        {"api_name": v["id"], "name": v["name"], "cost": v.get("cost"), "image": v["image"]}
         for v in _entries("tft-champion.json")
     ]
 
 
 def _load_traits() -> list[dict]:
     return [
-        {"api_name": v["id"], "name": v["name"]} for v in _entries("tft-trait.json")
+        {"api_name": v["id"], "name": v["name"], "image": v["image"]}
+        for v in _entries("tft-trait.json")
     ]
+
+
+# Items that are not gear: stat boosters, potions, consumables, chests and the two
+# upgrade items. Everything else that has no other category is a standard completed item.
+MISC_MARKERS = (
+    "Booster",
+    "Potion",
+    "DA_Consumable_",
+    "LuckyItemChest",
+    "MasterworkUpgrade",
+    "Reforger",
+)
 
 
 def item_type(api_name: str) -> str:
     """Kind of item, read from the api name since Data Dragon has no category field:
-    artifact (DA_Artifact_*, DA_Item_Artifact_*), radiant (ends in Radiant),
-    component (DA_Component_*), emblem (DA_18_Emblem*), else other. Other holds the
-    standard completed items plus boosters, consumables, chests and the Tactician's items."""
+    artifact (DA_Artifact_*, DA_Item_Artifact_*), radiant (ends in Radiant), component
+    (DA_Component_*), emblem (DA_18_Emblem*), misc (boosters, potions, consumables, chests,
+    Masterwork Upgrade, Reforger), else completed (the standard completed items and the
+    Tactician's items)."""
     if "Artifact" in api_name:
         return "artifact"
     if api_name.endswith("Radiant"):
@@ -69,12 +92,19 @@ def item_type(api_name: str) -> str:
         return "component"
     if api_name.startswith("DA_18_Emblem"):
         return "emblem"
-    return "other"
+    if any(marker in api_name for marker in MISC_MARKERS):
+        return "misc"
+    return "completed"
 
 
 def _load_items() -> list[dict]:
     return [
-        {"api_name": v["id"], "name": v["name"], "item_type": item_type(v["id"])}
+        {
+            "api_name": v["id"],
+            "name": v["name"],
+            "item_type": item_type(v["id"]),
+            "image": v["image"],
+        }
         for v in _entries("tft-item.json")
     ]
 

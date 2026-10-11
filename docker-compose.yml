@@ -9,9 +9,12 @@ services:
     environment:
       - NODE_ENV=development
       - CHOKIDAR_USEPOLLING=true
+      # The pages read BigQuery with your gcloud Application Default Credentials (mounted below)
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-}
     volumes:
       - .:/app
       - /app/node_modules
+      - ${HOME}/.config/gcloud:/root/.config/gcloud:ro
     command: npm run dev -- --host 0.0.0.0 --port 3000
     stdin_open: true
     tty: true

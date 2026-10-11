@@ -95,10 +95,10 @@ Each routing region ingests up to 2000 new matches per run (`ROUTING_MATCH_TARGE
 
 ### Item types
 
-`items.item_type` (artifact, radiant, component, emblem or other) is read from the api name when the reference data is seeded, and `current_item_stats`, `current_champion_item_stats` and `current_champion_item_pair_stats` expose it. After pulling the change that added it:
+`items.item_type` (artifact, radiant, component, emblem, completed or misc) is read from the api name when the reference data is seeded, and `current_item_stats`, `current_champion_item_stats` and `current_champion_item_pair_stats` expose it. `misc` is boosters, potions, consumables, chests, Masterwork Upgrade and Reforger; `completed` is every other item. The reference tables also carry an `image` path (`16.19.1/img/tft-champion/<file>.png`, relative to `https://ddragon.leagueoflegends.com/cdn/`), because the file names can't be derived from the api names. After pulling the change that added them:
 ```sh
-cd infra/gcp && terraform apply                    # adds the column and updates the three views
-PYTHONPATH=include python -m db.seed_reference_data   # fills item_type on the existing rows
+cd infra/gcp && terraform apply                    # adds the image column to champions/traits/items
+PYTHONPATH=include python -m db.seed_reference_data   # fills item_type and image on the existing rows
 ```
 
 ### Embeddings

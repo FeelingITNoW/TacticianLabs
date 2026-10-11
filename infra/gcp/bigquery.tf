@@ -196,7 +196,8 @@ locals {
     }
   }
 
-  # What dashboards and LLM queries read: the latest patch only, with display names.
+  # What dashboards and LLM queries read: the latest patch only, with display names
+  # (and the current ladder, which has no patch).
   bq_current_views = {
     current_champion_stats = {
       file        = "current_champion_stats.sql.tftpl"
@@ -221,6 +222,10 @@ locals {
     current_composition_stats = {
       file        = "current_composition_stats.sql.tftpl"
       description = "composition_stats for the latest patch."
+    }
+    leaderboard = {
+      file        = "leaderboard.sql.tftpl"
+      description = "The current Challenger, Grandmaster and Master ladder per platform, without players who have left it."
     }
   }
 }
@@ -342,6 +347,45 @@ resource "google_bigquery_table" "current_views" {
   }
 
   depends_on = [google_bigquery_table.stats_views]
+}
+
+# The 3-item builds on one champion, counted from the match tables on demand. Shared by
+# the SQL agent's `trios` tool (include/insights/item_trios.py) and the web app, so the SQL
+# lives once. It reads the per-match tables, so callers pass the patch's time window.
+resource "google_bigquery_routine" "champion_item_trios" {
+  dataset_id   = google_bigquery_dataset.tft.dataset_id
+  routine_id   = "champion_item_trios"
+  routine_type = "TABLE_VALUED_FUNCTION"
+  language     = "SQL"
+  description  = "Full 3-item builds on one champion in one patch, with display names and stats. Pass the patch's first and last ranked play time to prune partitions."
+  definition_body = templatefile("${path.module}/bigquery/routines/champion_item_trios.sql.tftpl", {
+    project         = var.project_id
+    dataset         = google_bigquery_dataset.tft.dataset_id
+    ranked_queue_id = 1100 # TFT_RANKED_QUEUE_ID in riot_api/constants.py
+  })
+
+  arguments {
+    name      = "p_champion"
+    data_type = jsonencode({ typeKind = "STRING" })
+  }
+  arguments {
+    name      = "p_patch"
+    data_type = jsonencode({ typeKind = "STRING" })
+  }
+  arguments {
+    name      = "p_lo"
+    data_type = jsonencode({ typeKind = "TIMESTAMP" })
+  }
+  arguments {
+    name      = "p_hi"
+    data_type = jsonencode({ typeKind = "TIMESTAMP" })
+  }
+  arguments {
+    name      = "p_min_games"
+    data_type = jsonencode({ typeKind = "INT64" })
+  }
+
+  depends_on = [google_bigquery_table.base, google_bigquery_table.linked]
 }
 
 # --- Access for the ingest job ----------------------------------------------

@@ -7,6 +7,11 @@ import {
   HeadContent,
   Scripts,
 } from '@tanstack/react-router'
+import appCss from '../styles/app.css?url'
+import { getMetaFn } from '@/data/meta.functions'
+import { SiteHeader } from '@/components/site-header'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import { DDRAGON_ORIGIN } from '@/lib/ddragon'
 
 export const Route = createRootRoute({
   head: () => ({
@@ -22,26 +27,47 @@ export const Route = createRootRoute({
         title: 'TFT Data Analyzer',
       },
     ],
+    links: [
+      { rel: 'stylesheet', href: appCss },
+      // No icon yet; an empty one stops the browser asking for /favicon.ico on every page
+      { rel: 'icon', href: 'data:,' },
+      { rel: 'preconnect', href: DDRAGON_ORIGIN },
+    ],
   }),
+  // The header shows the patch. If the data can't be read the pages say so themselves.
+  loader: () => getMetaFn().catch(() => null),
+  staleTime: 10 * 60_000,
   component: RootComponent,
 })
 
 function RootComponent() {
   return (
     <RootDocument>
-      <Outlet />
+      <Shell />
     </RootDocument>
+  )
+}
+
+function Shell() {
+  const meta = Route.useLoaderData()
+  return (
+    <>
+      <SiteHeader meta={meta} />
+      <main className="mx-auto max-w-6xl px-4 py-8">
+        <Outlet />
+      </main>
+    </>
   )
 }
 
 function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html>
+    <html lang="en" className="dark">
       <head>
         <HeadContent />
       </head>
-      <body>
-        {children}
+      <body className="min-h-screen antialiased">
+        <TooltipProvider>{children}</TooltipProvider>
         <Scripts />
       </body>
     </html>

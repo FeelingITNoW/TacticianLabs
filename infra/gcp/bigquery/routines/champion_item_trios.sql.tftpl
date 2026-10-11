@@ -1,0 +1,55 @@
+-- Full 3-item builds on one champion in one patch: how often each trio was held, and how
+-- those boards placed. Trios are too sparse for counters (a unit's three items are its
+-- whole build), so this counts them from the match tables on demand.
+-- Arguments are p_-prefixed because inside the body a bare `patch` or `champion` would
+-- resolve to the column of that name, not the argument.
+-- p_lo/p_hi must be the patch's first and last ranked play time (see patch_window in
+-- data_aggregation.py): every per-match table is partitioned on played_at, and passing
+-- the window is what keeps this to ~1 GB instead of the whole history.
+WITH builds AS (
+  -- A unit holding exactly 3 items: its build, with the items in a fixed order
+  SELECT u.match_id, u.puuid, ARRAY_AGG(i.item ORDER BY i.item) AS items
+  FROM `${project}.${dataset}.participant_units` AS u
+  JOIN `${project}.${dataset}.unit_items` AS i USING (match_id, puuid, slot)
+  WHERE u.champion = p_champion
+    AND u.played_at BETWEEN p_lo AND p_hi
+    AND i.played_at BETWEEN p_lo AND p_hi
+  GROUP BY u.match_id, u.puuid, u.slot
+  HAVING COUNT(*) = 3
+),
+boards AS (
+  -- DISTINCT: two copies with the same build count once per board
+  SELECT DISTINCT match_id, puuid, items[OFFSET(0)] AS item_a, items[OFFSET(1)] AS item_b,
+    items[OFFSET(2)] AS item_c
+  FROM builds
+),
+trios AS (
+  SELECT
+    b.item_a, b.item_b, b.item_c,
+    COUNT(*) AS games,
+    SAFE_DIVIDE(COUNTIF(p.placement = 1), COUNT(*)) AS win_rate,
+    SAFE_DIVIDE(COUNTIF(p.placement <= 4), COUNT(*)) AS top4_rate,
+    AVG(p.placement) AS average_placement
+  FROM boards AS b
+  JOIN `${project}.${dataset}.participants` AS p USING (match_id, puuid)
+  JOIN `${project}.${dataset}.matches` AS m USING (match_id)
+  WHERE p.played_at BETWEEN p_lo AND p_hi
+    AND m.played_at BETWEEN p_lo AND p_hi
+    AND m.game_version = p_patch
+    AND m.queue_id = ${ranked_queue_id}
+  GROUP BY b.item_a, b.item_b, b.item_c
+  HAVING games >= p_min_games
+)
+SELECT
+  t.item_a, t.item_b, t.item_c,
+  COALESCE(a.name, t.item_a) AS item_a_name,
+  COALESCE(b.name, t.item_b) AS item_b_name,
+  COALESCE(c.name, t.item_c) AS item_c_name,
+  t.games, t.win_rate, t.top4_rate, t.average_placement,
+  SAFE_DIVIDE(t.games, ch.boards) AS share_of_champion_games
+FROM trios AS t
+LEFT JOIN `${project}.${dataset}.items` AS a ON a.api_name = t.item_a
+LEFT JOIN `${project}.${dataset}.items` AS b ON b.api_name = t.item_b
+LEFT JOIN `${project}.${dataset}.items` AS c ON c.api_name = t.item_c
+LEFT JOIN `${project}.${dataset}.champion_totals` AS ch
+  ON ch.patch = p_patch AND ch.api_name = p_champion
