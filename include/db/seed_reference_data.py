@@ -6,7 +6,7 @@ use and which stays the same across patches. Each run adds new rows and updates
 existing ones, and never deletes, so names still resolve for older patches' stats.
 It then refreshes the names, costs and item counts stored on the match tables
 (db.reference_names).
-Source: the root tft-*.json Data Dragon files (version 16.19.1).
+Source: the Data Dragon tft-*.json files in db/reference_data/ (version 16.19.1).
 
 Usage:
     PYTHONPATH=include python -m db.seed_reference_data
@@ -21,7 +21,7 @@ from google.cloud import bigquery
 from db.bq import column_names, make_client, run_query, staged, table_ref
 from db.reference_names import backfill_names
 
-WORKSPACE_ROOT = Path(__file__).parent.parent.parent
+REFERENCE_DIR = Path(__file__).parent / "reference_data"
 
 TFT_SET = 18
 # Set 18 api names start with "DA_" (e.g. DA_18_KhaZix, DA_18_Brawler,
@@ -31,7 +31,7 @@ SET_ID_PREFIX = "DA_"
 
 def _entries(filename: str) -> list[dict]:
     """The set's entries from a Data Dragon file, each with its versioned `image` path."""
-    with open(WORKSPACE_ROOT / filename) as f:
+    with open(REFERENCE_DIR / filename) as f:
         data = json.load(f)
     return sorted(
         (

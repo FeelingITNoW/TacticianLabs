@@ -43,19 +43,19 @@ locals {
       clustering      = null
     }
     champions = {
-      description     = "Set reference data from tft-champion.json, keyed by Riot api name."
+      description     = "Set reference data from include/db/reference_data/tft-champion.json, keyed by Riot api name."
       primary_key     = ["api_name"]
       partition_field = null
       clustering      = null
     }
     traits = {
-      description     = "Set reference data from tft-trait.json, keyed by Riot api name."
+      description     = "Set reference data from include/db/reference_data/tft-trait.json, keyed by Riot api name."
       primary_key     = ["api_name"]
       partition_field = null
       clustering      = null
     }
     items = {
-      description     = "Reference data from tft-item.json, keyed by Riot api name."
+      description     = "Reference data from include/db/reference_data/tft-item.json, keyed by Riot api name."
       primary_key     = ["api_name"]
       partition_field = null
       clustering      = null
