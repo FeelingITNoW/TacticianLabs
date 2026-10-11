@@ -3,9 +3,11 @@
 Each board (one player in one match) becomes a vector with one column per
 feature seen in the patch:
 
-- `u:<champion>`: 1 + the number of items the unit holds (1-4), so a unit with
-  three items weighs four times an itemless one and the main carries dominate
-  the comp. With duplicate copies the one holding the most items counts.
+- `u:<champion>`: (UNIT_BASE_WEIGHT + the number of items the unit holds) times a
+  factor for its star level (STAR_WEIGHTS), so itemized, starred-up units (the
+  carries and tanks) dominate the comp while itemless 1-star filler barely counts
+  and two or three of them swapping between boards doesn't split a comp. With
+  duplicate copies the one holding the most items counts.
 - `t:<trait>`: the trait's `tier_current` times TRAIT_WEIGHT, for active traits
   only (`tier_current > 0`, the same rule as `trait_totals`).
 
@@ -18,8 +20,9 @@ similar than the comp's own boards are. A cluster whose own boards are not alike
 reported as a comp. The comps' counters are exact: they come
 from every assigned board, not from the sample.
 
-Star levels play no part in the vectors; they are only reported per comp, and with
-the carries' costs they give the comp its category (see categorize). Only ranked
+Star levels also give each comp its category (see categorize), with the carries'
+costs. The per-unit stats (`avg_items`, `avg_star`) come from the raw counts, not
+the clustering weights above. Only ranked
 boards are clustered, since the match tables also hold Challengers' normal games.
 """
 
@@ -40,10 +43,14 @@ from db.bq import insert_from_staging_sql, run_query, staged, table_ref, with_re
 from riot_api.constants import TFT_RANKED_QUEUE_ID
 
 TRAIT_WEIGHT = 1.0
-SAMPLE_SIZE = 20_000
-MIN_CLUSTER_SIZE = 30
-MIN_CLUSTER_FRACTION = 0.003  # of the sample, when that is more than MIN_CLUSTER_SIZE
-THRESHOLD_PERCENTILE = 5  # a board must be at least as similar as 95% of its comp's sample
+UNIT_BASE_WEIGHT = 0.25  # what an itemless unit weighs; each item adds 1
+STAR_WEIGHTS = {2: 1.5, 3: 2.5}  # multiplier by star level; 1 star (and anything else) is 1.0
+SAMPLE_SIZE = 50_000
+MIN_CLUSTER_SIZE = 25
+MIN_CLUSTER_FRACTION = 0.002  # of the sample, when that is more than MIN_CLUSTER_SIZE
+# a board is assigned to a comp when it is at least as similar to the centroid as this
+# percentile of the comp's own sampled boards, so about 96.5% of those would pass
+THRESHOLD_PERCENTILE = 3.5
 MIN_COHESION = 0.5  # clusters whose threshold is below this aren't comps
 MIN_FREQUENCY = 0.25  # units and traits on fewer of a comp's boards aren't listed
 CORE_FREQUENCY = 0.5  # units on at least this share of a comp's boards give its id
@@ -51,6 +58,14 @@ CARRY_ITEMS = 2.0  # a listed unit holding this many items on average is a carry
 REROLL_STAR = 2.5  # a carry of a reroll cost at this average star level is rerolled for
 REROLL_COSTS = (1, 2, 3)
 ASSIGN_CHUNK = 50_000
+
+# Variants: sub-clusters inside one comp that differ from it by a few units or traits.
+MIN_VARIANT_SIZE = 40  # smallest variant, in sampled boards
+VARIANT_FRACTION = 0.02  # of the comp's sampled boards, when that is more than MIN_VARIANT_SIZE
+VARIANT_SAMPLE = 8_000  # boards of one comp the variants are fitted on
+VARIANT_MIN_DIFF = 0.3  # a unit or trait is a difference when its frequency moves this much
+VARIANT_MAX_UNIT_DIFF = 4  # a sub-cluster differing by more units than this isn't a variant
+VARIANT_LABEL_DIFFS = 3  # differences named in a variant's label
 
 UNIT = "u:"
 TRAIT = "t:"
@@ -99,9 +114,9 @@ class Boards:
     played_at: list[str]
     placements: np.ndarray
     features: list[str]  # sorted; "u:<champion>" or "t:<trait>"
-    raw: sparse.csr_matrix  # units: 1 + items, traits: tier_current
+    raw: sparse.csr_matrix  # units: 1 + items, traits: tier_current (what the stats use)
     stars: sparse.csr_matrix  # units: star level
-    vectors: sparse.csr_matrix  # weighted and L2-normalised, what gets clustered
+    vectors: sparse.csr_matrix  # item, star and trait weighted, L2-normalised; what gets clustered
 
     def __len__(self) -> int:
         return len(self.placements)
@@ -151,7 +166,13 @@ def fetch_boards(client: bigquery.Client, patch: str) -> Boards:
     sql = BOARDS_SQL.format(
         **{
             name: table_ref(client, name)
-            for name in ("unit_items", "participant_units", "participant_traits", "participants", "matches")
+            for name in (
+                "unit_items",
+                "participant_units",
+                "participant_traits",
+                "participants",
+                "matches",
+            )
         }
     )
     config = bigquery.QueryJobConfig(
@@ -174,7 +195,9 @@ def build_boards(rows: Iterable[dict]) -> Boards:
         match_ids.append(row["match_id"])
         puuids.append(row["puuid"])
         stamp = row["played_at"]
-        played_at.append(stamp.isoformat() if hasattr(stamp, "isoformat") else str(stamp))
+        played_at.append(
+            stamp.isoformat() if hasattr(stamp, "isoformat") else str(stamp)
+        )
         placements.append(row["placement"])
         for feature in row["features"]:
             columns.append(codes.setdefault(feature["feature"], len(codes)))
@@ -195,18 +218,13 @@ def build_boards(rows: Iterable[dict]) -> Boards:
         # Each matrix gets its own copy of the structure: sort_indices() reorders the
         # column indices in place, which would leave a matrix sharing them misaligned
         built = sparse.csr_matrix(
-            (np.array(data, dtype=np.float32), cols.copy(), pointers.copy()), shape=shape
+            (np.array(data, dtype=np.float32), cols.copy(), pointers.copy()),
+            shape=shape,
         )
         built.sort_indices()
         return built
 
     raw, star_levels = matrix(values), matrix(stars)
-    weights = sparse.diags(
-        np.array(
-            [TRAIT_WEIGHT if name.startswith(TRAIT) else 1.0 for name in features],
-            dtype=np.float32,
-        )
-    )
     return Boards(
         match_ids=np.array(match_ids, dtype=object),
         puuids=np.array(puuids, dtype=object),
@@ -215,8 +233,30 @@ def build_boards(rows: Iterable[dict]) -> Boards:
         features=features,
         raw=raw,
         stars=star_levels,
-        vectors=normalize((raw @ weights).tocsr()) if len(placements) else raw,
+        vectors=(
+            normalize(clustering_weights(raw, star_levels, features))
+            if len(placements)
+            else raw
+        ),
     )
+
+
+def clustering_weights(
+    raw: sparse.csr_matrix, stars: sparse.csr_matrix, features: list[str]
+) -> sparse.csr_matrix:
+    """`raw` reweighted for clustering: units by items and star level, traits by tier.
+
+    `raw` and `stars` are built from the same structure, so their data line up.
+    """
+    is_unit = np.array([name.startswith(UNIT) for name in features])[raw.indices]
+    items = raw.data - 1.0  # units are stored as 1 + items
+    star_factor = np.ones_like(raw.data)
+    for star, factor in STAR_WEIGHTS.items():
+        star_factor[stars.data == star] = factor
+    data = np.where(
+        is_unit, (UNIT_BASE_WEIGHT + items) * star_factor, raw.data * TRAIT_WEIGHT
+    ).astype(np.float32)
+    return sparse.csr_matrix((data, raw.indices, raw.indptr), shape=raw.shape)
 
 
 # --- Clustering -------------------------------------------------------------
@@ -235,7 +275,9 @@ def fit_clusters(
     rng = np.random.default_rng(seed)
     chosen = np.sort(rng.choice(total, size=min(total, sample_size), replace=False))
     sample = vectors[chosen]
-    size = min_cluster_size or max(MIN_CLUSTER_SIZE, int(MIN_CLUSTER_FRACTION * len(chosen)))
+    size = min_cluster_size or max(
+        MIN_CLUSTER_SIZE, int(MIN_CLUSTER_FRACTION * len(chosen))
+    )
     if len(chosen) < size:
         return None
 
@@ -258,7 +300,9 @@ def fit_clusters(
     )
 
 
-def assign(vectors: sparse.csr_matrix, clusters: Clusters) -> tuple[np.ndarray, np.ndarray]:
+def assign(
+    vectors: sparse.csr_matrix, clusters: Clusters
+) -> tuple[np.ndarray, np.ndarray]:
     """(comp index or -1 for each board, its similarity to the nearest comp)."""
     labels = np.empty(vectors.shape[0], dtype=np.int64)
     similarity = np.empty(vectors.shape[0], dtype=np.float32)
@@ -280,7 +324,9 @@ def display_name(names: dict[str, str], api_name: str) -> str:
     return names.get(api_name) or api_name.split("_")[-1]
 
 
-def _feature_stats(boards: Boards, members: np.ndarray) -> tuple[list[dict], list[dict]]:
+def _feature_stats(
+    boards: Boards, members: np.ndarray
+) -> tuple[list[dict], list[dict]]:
     """Units and traits on enough of the members' boards, most common first."""
     count = len(members)
     raw = boards.raw[members]
@@ -294,7 +340,9 @@ def _feature_stats(boards: Boards, members: np.ndarray) -> tuple[list[dict], lis
         entry = {"api_name": feature[2:], "frequency": round(boards_with / count, 4)}
         if feature.startswith(UNIT):
             # value = 1 + items
-            entry["avg_items"] = round(float(totals[column] - boards_with) / boards_with, 4)
+            entry["avg_items"] = round(
+                float(totals[column] - boards_with) / boards_with, 4
+            )
             entry["avg_star"] = round(float(star_totals[column]) / boards_with, 4)
             units.append(entry)
         else:
@@ -306,13 +354,19 @@ def _feature_stats(boards: Boards, members: np.ndarray) -> tuple[list[dict], lis
 
 
 def _comp_label(names, units, traits, carries) -> str | None:
-    trait = max(traits, key=lambda t: (t["frequency"] * t["avg_tier"], t["api_name"]), default=None)
+    trait = max(
+        traits,
+        key=lambda t: (t["frequency"] * t["avg_tier"], t["api_name"]),
+        default=None,
+    )
     carry = carries[0] if carries else (units[0]["api_name"] if units else None)
     parts = [display_name(names, x) for x in (trait and trait["api_name"], carry) if x]
     return " ".join(parts) or None
 
 
-def categorize(units: list[dict], carries: list[str], costs: dict[str, int]) -> str | None:
+def categorize(
+    units: list[dict], carries: list[str], costs: dict[str, int]
+) -> str | None:
     """How the comp is played, from its carries' costs and average star levels.
 
     Carries of cost 1-3 that average REROLL_STAR or more are rerolled for, and the
@@ -361,7 +415,9 @@ def summarize(
     the plain id and the other gets "-2".
     """
     stamp = (clustered_at or datetime.now(timezone.utc)).isoformat()
-    sizes = np.bincount(labels[labels >= 0]) if (labels >= 0).any() else np.zeros(0, int)
+    sizes = (
+        np.bincount(labels[labels >= 0]) if (labels >= 0).any() else np.zeros(0, int)
+    )
     comp_ids: dict[int, str] = {}
     comps: list[dict] = []
     taken: set[str] = set()
@@ -371,7 +427,9 @@ def summarize(
         units, traits = _feature_stats(boards, members)
         carries = [
             u["api_name"]
-            for u in sorted(units, key=lambda u: (-u["avg_items"], -u["frequency"], u["api_name"]))
+            for u in sorted(
+                units, key=lambda u: (-u["avg_items"], -u["frequency"], u["api_name"])
+            )
             if u["avg_items"] >= CARRY_ITEMS
         ]
         base = comp_id = _comp_id(units, carries)
@@ -415,15 +473,143 @@ def summarize(
     return comps, assignments
 
 
+# --- Variants ---------------------------------------------------------------
+
+
+def _variant_diff(
+    comp: tuple[list[dict], list[dict]], variant: tuple[list[dict], list[dict]]
+) -> list[dict]:
+    """Units and traits whose frequency in the variant differs from the comp's by
+    VARIANT_MIN_DIFF or more, biggest difference first. A feature too rare to be
+    listed (under MIN_FREQUENCY) counts as 0."""
+    diffs = []
+    for kind, comp_entries, variant_entries in (
+        ("unit", comp[0], variant[0]),
+        ("trait", comp[1], variant[1]),
+    ):
+        base = {e["api_name"]: e["frequency"] for e in comp_entries}
+        new = {e["api_name"]: e["frequency"] for e in variant_entries}
+        for name in base.keys() | new.keys():
+            before, after = base.get(name, 0.0), new.get(name, 0.0)
+            if abs(after - before) >= VARIANT_MIN_DIFF:
+                diffs.append(
+                    {
+                        "api_name": name,
+                        "kind": kind,
+                        "change": "added" if after > before else "removed",
+                        "frequency": after,
+                        "family_frequency": before,
+                    }
+                )
+    diffs.sort(
+        key=lambda d: (-abs(d["frequency"] - d["family_frequency"]), d["api_name"])
+    )
+    return diffs
+
+
+def _variant_id(comp_id: str, diffs: list[dict]) -> str:
+    key = comp_id + "#" + "|".join(sorted(f"{d['change']}:{d['api_name']}" for d in diffs))
+    return hashlib.sha1(key.encode()).hexdigest()[:12]
+
+
+def _variant_label(names: dict[str, str], label: str, diffs: list[dict]) -> str:
+    parts = [
+        ("+" if d["change"] == "added" else "-") + display_name(names, d["api_name"])
+        for d in diffs[:VARIANT_LABEL_DIFFS]
+    ]
+    return " ".join([label, *parts])
+
+
+def find_variants(
+    boards: Boards,
+    comp_ids: np.ndarray,
+    comp_labels: dict[str, str],
+    names: dict[str, str],
+    patch: str,
+    clustered_at: datetime | None = None,
+    seed: int = 0,
+) -> tuple[list[dict], np.ndarray]:
+    """Split each comp's boards into variants. `comp_ids` has each board's comp (None
+    when it has none).
+
+    A variant is a sub-cluster of one comp's boards, fitted the same way as the comps
+    but on that comp alone, that differs from the comp by at least one and at most
+    VARIANT_MAX_UNIT_DIFF units (or by traits). Boards in no variant are the comp's
+    base build. Returns the `composition_variants` rows and each board's variant id
+    (None for none). The variants' counters are exact over their assigned boards.
+    """
+    stamp = (clustered_at or datetime.now(timezone.utc)).isoformat()
+    variant_ids = np.full(len(boards), None, dtype=object)
+    rows: list[dict] = []
+    taken: set[str] = set()
+
+    for comp_id in sorted({c for c in comp_ids if c is not None}):
+        members = np.flatnonzero(comp_ids == comp_id)
+        if len(members) < 2 * MIN_VARIANT_SIZE:
+            continue
+        vectors = boards.vectors[members]
+        sample = min(len(members), VARIANT_SAMPLE)
+        size = max(MIN_VARIANT_SIZE, int(VARIANT_FRACTION * sample))
+        clusters = fit_clusters(vectors, VARIANT_SAMPLE, size, seed)
+        if clusters is None:
+            continue
+        labels, _ = assign(vectors, clusters)
+        comp = _feature_stats(boards, members)
+
+        found = []
+        for label in np.unique(labels[labels >= 0]):
+            chosen = members[labels == label]
+            units, traits = _feature_stats(boards, chosen)
+            diffs = _variant_diff(comp, (units, traits))
+            if not diffs or sum(d["kind"] == "unit" for d in diffs) > VARIANT_MAX_UNIT_DIFF:
+                continue
+            found.append((chosen, units, traits, diffs))
+
+        for chosen, units, traits, diffs in sorted(found, key=lambda f: -len(f[0])):
+            base = variant_id = _variant_id(comp_id, diffs)
+            suffix = 2
+            while variant_id in taken:
+                variant_id, suffix = f"{base}-{suffix}", suffix + 1
+            taken.add(variant_id)
+            variant_ids[chosen] = variant_id
+            placements = boards.placements[chosen]
+            rows.append(
+                {
+                    "patch": patch,
+                    "comp_id": comp_id,
+                    "variant_id": variant_id,
+                    "label": _variant_label(names, comp_labels.get(comp_id, comp_id), diffs),
+                    "boards": int(len(chosen)),
+                    "matches": int(np.unique(boards.match_ids[chosen]).size),
+                    "placement_sum": int(placements.sum()),
+                    "top4_count": int((placements <= 4).sum()),
+                    "win_count": int((placements == 1).sum()),
+                    "units": units,
+                    "traits": traits,
+                    "diff": diffs,
+                    "clustered_at": stamp,
+                }
+            )
+    return rows, variant_ids
+
+
 # --- Writing ----------------------------------------------------------------
 
 
 def write_compositions(
-    client: bigquery.Client, patch: str, compositions: list[dict], assignments: list[dict]
+    client: bigquery.Client,
+    patch: str,
+    compositions: list[dict],
+    assignments: list[dict],
+    variants: list[dict] | None = None,
 ) -> None:
-    """Replace the patch's comps and board assignments in one transaction, so a
-    rerun (or a crash part-way) never leaves them out of step with each other."""
-    rows = {"compositions": compositions, "participant_compositions": assignments}
+    """Replace the patch's comps, their variants and the board assignments in one
+    transaction, so a rerun (or a crash part-way) never leaves them out of step."""
+    rows = {
+        "compositions": compositions,
+        "composition_variants": variants or [],
+        "participant_compositions": assignments,
+    }
     with staged(client, rows) as staging:
         statements = []
         for name in rows:
@@ -445,8 +631,10 @@ def cluster_patch(
     min_cluster_size: int | None = None,
     seed: int = 0,
     dry_run: bool = False,
+    variants_out: list[dict] | None = None,
 ) -> list[dict]:
-    """Cluster one patch's boards and replace its comps. Returns the comps.
+    """Cluster one patch's boards and replace its comps and their variants. Returns the
+    comps; the variants are appended to `variants_out` when it is given.
 
     Writes nothing when there are no boards or no comps were found, so a bad
     run can't wipe the previous result.
@@ -461,19 +649,33 @@ def cluster_patch(
         return []
 
     labels, similarity = assign(boards.vectors, clusters)
+    names = fetch_names(client)
     comps, assignments = summarize(
         boards,
         labels,
         similarity,
-        fetch_names(client),
+        names,
         patch,
         clusters.sample_size,
         costs=fetch_costs(client),
     )
-    print(
-        f"Patch {patch}: {len(comps)} comps, {len(assignments)} of {len(boards)} "
-        f"boards assigned (fitted on {clusters.sample_size})"
+
+    assigned = np.flatnonzero(labels >= 0)
+    comp_ids = np.full(len(boards), None, dtype=object)
+    comp_ids[assigned] = [a["comp_id"] for a in assignments]
+    variants, variant_ids = find_variants(
+        boards, comp_ids, {c["comp_id"]: c["label"] for c in comps}, names, patch, seed=seed
     )
+    for board, assignment in zip(assigned, assignments):
+        assignment["variant_id"] = variant_ids[board]
+
+    print(
+        f"Patch {patch}: {len(comps)} comps with {len(variants)} variants, "
+        f"{len(assignments)} of {len(boards)} boards assigned "
+        f"(fitted on {clusters.sample_size})"
+    )
+    if variants_out is not None:
+        variants_out.extend(variants)
     if not dry_run:
-        write_compositions(client, patch, comps, assignments)
+        write_compositions(client, patch, comps, assignments, variants)
     return comps

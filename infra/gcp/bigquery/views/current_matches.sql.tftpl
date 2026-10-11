@@ -1,0 +1,5 @@
+SELECT m.match_id, m.played_at, m.game_length, m.game_version AS patch, m.tft_set_number, m.region
+FROM `${project}.${dataset}.matches` AS m
+WHERE m.queue_id = 1100
+  AND m.game_version = (SELECT patch FROM `${project}.${dataset}.patch_totals` ORDER BY last_played_at DESC LIMIT 1)
+  AND m.played_at >= TIMESTAMP_SUB((SELECT MAX(last_played_at) FROM `${project}.${dataset}.patch_totals`), INTERVAL 30 DAY)

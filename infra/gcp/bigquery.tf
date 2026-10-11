@@ -42,6 +42,12 @@ locals {
       partition_field = null
       clustering      = null
     }
+    composition_variants = {
+      description     = "Per-patch variants of each comp: sub-clusters that differ from it by a few units or traits, with exact counters over their assigned boards. Read through the composition_variant_stats view."
+      primary_key     = ["patch", "variant_id"]
+      partition_field = null
+      clustering      = null
+    }
     champions = {
       description     = "Set reference data from include/db/reference_data/tft-champion.json, keyed by Riot api name."
       primary_key     = ["api_name"]
@@ -194,6 +200,11 @@ locals {
       vars        = {}
       description = "Per-patch comp stats derived from the compositions counters."
     }
+    composition_variant_stats = {
+      file        = "composition_variant_stats.sql.tftpl"
+      vars        = {}
+      description = "Per-patch stats for each comp variant derived from the composition_variants counters."
+    }
   }
 
   # What dashboards and LLM queries read: the latest patch only, with display names
@@ -222,6 +233,22 @@ locals {
     current_composition_stats = {
       file        = "current_composition_stats.sql.tftpl"
       description = "composition_stats for the latest patch."
+    }
+    current_matches = {
+      file        = "current_matches.sql.tftpl"
+      description = "Ranked matches of the latest patch, one row per game (no per-board data)."
+    }
+    current_participant_compositions = {
+      file        = "current_participant_compositions.sql.tftpl"
+      description = "Every ranked board of the latest patch: placement, level, gold, completed items and board cost, plus the comp it was assigned to (NULL if none). One row per player per match."
+    }
+    current_participant_units = {
+      file        = "current_participant_units.sql.tftpl"
+      description = "Every unit on every ranked board of the latest patch, with its star level, items and the board's placement. Large: filter on champion_name and select few columns."
+    }
+    current_composition_variant_stats = {
+      file        = "current_composition_variant_stats.sql.tftpl"
+      description = "composition_variant_stats for the latest patch."
     }
     leaderboard = {
       file        = "leaderboard.sql.tftpl"

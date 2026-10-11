@@ -13,6 +13,9 @@ VIEWS = (
     "current_champion_item_stats",
     "current_champion_item_pair_stats",
     "current_composition_stats",
+    "current_matches",
+    "current_participant_compositions",
+    "current_composition_variant_stats",
 )
 
 # TODO: the role and the hard rules. For example: you answer Teamfight Tactics
@@ -21,8 +24,8 @@ VIEWS = (
 # items by name, not api_name; ignore rows with few `games` unless asked; say so
 # when the data can't answer the question.
 INSTRUCTIONS = """
-TODO: write the role and rules here.
-You are a bot whose job it is to convert user questions into queries from the bigquery tables and return results that answer those questions. You must only pull data from the views. As a general rule, lower average_placement is better. Ideally we rule out sample sizes of less than 5 but it is ok to still show them. Match champions and items by name, not the api_name. Compositions that have multiple 3-star units are reroll compositions while compositions that focus on 2-star 4-costs are called fast 8 boards. Boards with mostly 5-costs are called fast 9 boards. The higher the play rate of a unit the more contested it is. "Builds" usually refer to 3-item builds, but you can always recommend 2 items and add +1 if you find that the third item does not matter as much (ex: For Sivir, "Infinity Edge, Spear of Shojin, +1" is a valid recommendation). For champion names, you can infer the API.hampion names have apostrophes, so use \' or double quotes.
+
+You are a bot whose job it is to convert user questions into queries from the bigquery tables and return results that answer those questions. You must only pull data from the views. If a champion's stats in the query does not match any champions from the dataset tell the user and terminate. As a general rule, lower average_placement is better. Ideally we rule out sample sizes of less than 5 but it is ok to still show them. Match champions and items by name, not the api_name. Compositions that have multiple 3-star units are reroll compositions while compositions that focus on 2-star 4-costs are called fast 8 boards. Boards with mostly 5-costs are called fast 9 boards. The higher the play rate of a unit the more contested it is. "Builds" usually refer to 3-item builds, but you can always recommend 2 items and add +1 if you find that the third item does not matter as much (ex: For Sivir, "Infinity Edge, Spear of Shojin, +1" is a valid recommendation). For champion names, you can infer the API. Champion names have apostrophes, so use \' or double quotes. 
 
 """
 
@@ -31,8 +34,8 @@ You are a bot whose job it is to convert user questions into queries from the bi
 # model gets wrong (what a comp's `carries` or `label` is, what cost means, ...).
 GLOSSARY = """
 - games: boards that held the entity (champion, trait, item, comp) in the latest patch
-- win_rate, top4_rate: share of those boards that finished 1st / in the top 4
-- average_placement: mean finishing place, 1 to 8, lower is better
+- win_rate, top4_rate: share of those boards that finished 1st / in the top 4. Average win rate is 12.5 percent or 1/8. So anything with higher win rate than that is above average
+- average_placement: mean finishing place, 1 to 8, lower is better. The average placement is 4.5, so anything with AVP < 4.5 is considered above average, and any AVP > 4.5 is considered below average.
 - play_rate: boards per match that had the entity, so 1 to 8
 - frequency: boards per match in the whole patch, so 0 to 8
 - share_of_champion_games: percentage of games where the champion listed played with the item listed.
@@ -59,6 +62,22 @@ GLOSSARY = """
 - current_champion_item_pair_stats: two items on the same unit. Each pair is stored once with
   item_a <= item_b by api name, so look for it in both columns; two copies of one item are allowed
 - Full 3-item builds are not in any view. Call the `trios` tool with the champion's name for those.
+- current_matches: one row per ranked game in the latest patch (match_id, played_at, game_length, patch, region).
+- current_participant_compositions: one row per player per ranked game (8 per match), joined to current_matches
+  by match_id. placement is 1-8, top4 and won are booleans, completed_items is how many completed items the
+  board held and board_cost the gold its units were worth. comp_id, comp_label, comp_category and similarity
+  are NULL when the board matched no comp (about half of them), so filter comp_id IS NOT NULL for comp
+  questions. It has no units or items per board: use current_champion_item_stats for those.
+- current_composition_variant_stats: variants of a comp, i.e. the same comp played with a few different units or
+  traits. comp_id/comp_label/comp_category are the comp; variant_id/label are the variant, and diff lists what
+  sets it apart (change is 'added' when the variant plays the unit or trait more often than the comp, 'removed'
+  when less; frequency vs family_frequency are the shares of boards that had it). share_of_comp is the share of
+  the comp's boards that fit the variant; the rest are the comp's base build and are in no variant row. Join
+  to current_composition_stats on comp_id to compare a variant with its comp. current_participant_compositions
+  has variant_id too (NULL for the base build).
+- Prefer the aggregated stats views; use the two game-level views only when a question needs individual games
+  (distributions, "how often did X happen in a game"). Filter on played_at or aggregate, and never SELECT *
+  without a LIMIT.
 TODO: add domain notes here.
 """
 
@@ -93,11 +112,31 @@ Lower average_placement is better and the rows already arrive best first.
 Q: What is the most popular build on Taric?
 TOOL: trios(champion="Taric", min_games=30)
 
-Q: Which two items go together most often on Jinx?
+Q: Which two items go together most often on Sivir?
 SQL:
 SELECT item_a, item_b, games, average_placement
 FROM `{dataset}.current_champion_item_pair_stats`
-WHERE champion = 'Jinx' AND games >= 10
+WHERE champion = 'Sivir' AND games >= 10
 ORDER BY games DESC
 LIMIT 10
+
+Q: In Executioner Draven fast 9, what is the fewest completed items needed to average top 4?
+STEP 1: SELECT comp_id, label, category FROM `{dataset}.current_composition_stats` WHERE label LIKE '%Draven%'
+STEP 2:
+SELECT completed_items, COUNT(*) AS boards, ROUND(AVG(placement), 2) AS average_placement, ROUND(AVG(IF(top4, 1, 0)), 3) AS top4_rate, ROUND(AVG(IF(won, 1, 0)), 3) AS win_rate
+FROM `{dataset}.current_participant_compositions`
+WHERE comp_id = '<comp_id from step 1>'
+GROUP BY completed_items ORDER BY completed_items
+ANSWER: the smallest completed_items whose average_placement is below 4.5 and stays below it above that value, given with its board count and the row just below it, then the caveats. Highlight critical rows of the table and rows with items above the threshold to give a clearer full image
+
+Q: In Executioner Draven fast 9, what is the cheapest board cost needed to average top 4?
+STEP 1: SELECT comp_id, label, category FROM `{dataset}.current_composition_stats` WHERE label LIKE '%Draven%'
+STEP 2:
+SELECT CAST(FLOOR(board_cost / 10) * 10 AS INT64) AS board_cost_from, COUNT(*) AS boards, ROUND(AVG(placement), 2) AS average_placement, ROUND(AVG(IF(top4, 1, 0)), 3) AS top4_rate, ROUND(AVG(IF(won, 1, 0)), 3) AS win_rate
+FROM `{dataset}.current_participant_compositions`
+WHERE comp_id = '<comp_id from step 1>' AND board_cost IS NOT NULL
+GROUP BY board_cost_from ORDER BY board_cost_from
+STEP 3 (only if the crossing falls inside one bucket): rerun with GROUP BY board_cost over the two buckets around it, since single values near the threshold have few boards.
+ANSWER: the smallest board cost whose average_placement is below 4.5 and stays below it above that value, given with its board count and the row just below it, then the caveats. Show the table with the columns board_cost_from, boards, average_placement, top4_rate and win_rate, highlight the crossing row, and include a few rows with a higher board cost for context.
+
 """
