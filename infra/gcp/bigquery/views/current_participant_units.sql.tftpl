@@ -1,0 +1,29 @@
+WITH latest AS (
+  SELECT patch, last_played_at FROM `${project}.${dataset}.patch_totals` ORDER BY last_played_at DESC LIMIT 1
+),
+recent_items AS (
+  SELECT match_id, puuid, slot, ARRAY_AGG(item_name IGNORE NULLS ORDER BY item_index) AS items
+  FROM `${project}.${dataset}.unit_items`
+  WHERE played_at >= TIMESTAMP_SUB((SELECT last_played_at FROM latest), INTERVAL 30 DAY)
+  GROUP BY match_id, puuid, slot
+)
+SELECT
+  u.match_id,
+  u.puuid,
+  u.played_at,
+  m.game_version AS patch,
+  p.placement,
+  p.placement <= 4 AS top4,
+  u.slot,
+  u.champion_name,
+  u.star,
+  IFNULL(i.items, []) AS items
+FROM `${project}.${dataset}.participant_units` AS u
+JOIN `${project}.${dataset}.matches` AS m ON m.match_id = u.match_id
+JOIN `${project}.${dataset}.participants` AS p ON p.match_id = u.match_id AND p.puuid = u.puuid
+LEFT JOIN recent_items AS i ON i.match_id = u.match_id AND i.puuid = u.puuid AND i.slot = u.slot
+WHERE m.queue_id = 1100
+  AND m.game_version = (SELECT patch FROM latest)
+  AND m.played_at >= TIMESTAMP_SUB((SELECT last_played_at FROM latest), INTERVAL 30 DAY)
+  AND p.played_at >= TIMESTAMP_SUB((SELECT last_played_at FROM latest), INTERVAL 30 DAY)
+  AND u.played_at >= TIMESTAMP_SUB((SELECT last_played_at FROM latest), INTERVAL 30 DAY)

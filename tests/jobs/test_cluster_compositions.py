@@ -14,6 +14,7 @@ from data_aggregation.compositions import (
     categorize,
     cluster_patch,
     fetch_boards,
+    find_variants,
     fit_clusters,
     summarize,
     write_compositions,
@@ -116,7 +117,21 @@ class TestBuildBoards:
         vectors = self.boards().vectors.toarray()
 
         assert np.linalg.norm(vectors, axis=1) == pytest.approx([1, 1])
-        assert vectors[0, 1] == pytest.approx(4 * vectors[0, 2])
+        # Ahri: 3 items at 3 stars, (0.25 + 3) * 2.5; Nami: no items at 2 stars, 0.25 * 1.5
+        assert vectors[0, 1] == pytest.approx(vectors[0, 2] * (3.25 * 2.5) / (0.25 * 1.5))
+
+    def test_itemless_one_star_filler_weighs_little(self):
+        boards = build_boards(
+            [row(0, [feature("Carry", items=3, star=2), feature("Filler", star=1)])]
+        )
+        vectors = boards.vectors.toarray()[0]
+        carry, filler = vectors[boards.features.index("u:Carry")], vectors[boards.features.index("u:Filler")]
+
+        assert filler < 0.1 * carry
+
+    def test_stats_still_read_the_raw_counts(self):
+        # the clustering weights must not leak into avg_items, which reads `raw`
+        assert self.boards().raw.toarray()[0, 1] == 4
 
     def test_trait_weight_scales_trait_columns(self, monkeypatch):
         monkeypatch.setattr(compositions, "TRAIT_WEIGHT", 0.0)
@@ -326,6 +341,98 @@ def unit(name: str, star: float, items: float = 3.0) -> dict:
     return {"api_name": name, "frequency": 1.0, "avg_items": items, "avg_star": star}
 
 
+def family_rows(rng: random.Random, count: int, start: int, alt: bool) -> list[dict]:
+    """Boards of one comp (a 3-item carry, a tank and two 1-item units) that either
+    play A4 and A5 or the itemized Alt1 and Alt2 instead, plus a splash unit."""
+    tail = ["Alt1", "Alt2"] if alt else ["A4", "A5"]
+    rows = []
+    for i in range(count):
+        features = [
+            feature("A0", 3, star=3),
+            feature("A1", 2),
+            feature("A2", 1),
+            feature("A3", 1),
+            *[feature(unit, 1) for unit in tail],
+            feature(f"Splash{rng.randrange(20)}"),
+            trait("Trait", 2),
+        ]
+        rows.append(row(start + i, features, placement=rng.randint(1, 8)))
+    return rows
+
+
+class TestFindVariants:
+    def boards(self, base=150, alt=150):
+        rng = random.Random(7)
+        return build_boards(family_rows(rng, base, 0, False) + family_rows(rng, alt, base, True))
+
+    def variants(self, boards, comp_id="fam"):
+        comp_ids = np.full(len(boards), comp_id, dtype=object)
+        return find_variants(boards, comp_ids, {comp_id: "Trait A0"}, {}, PATCH)
+
+    def test_a_comp_played_two_ways_has_two_variants(self):
+        boards = self.boards()
+
+        rows, variant_ids = self.variants(boards)
+
+        assert len(rows) == 2
+        assert {r["comp_id"] for r in rows} == {"fam"}
+        # a few boards sit under a variant's cutoff and stay in the comp's base build
+        assigned = sum(v is not None for v in variant_ids)
+        assert assigned == sum(r["boards"] for r in rows) >= 270
+
+    def test_each_variant_names_what_it_adds_and_drops(self):
+        rows, _ = self.variants(self.boards())
+
+        alt = next(r for r in rows if any(d["api_name"] == "Alt1" and d["change"] == "added" for d in r["diff"]))
+        changes = {d["api_name"]: d["change"] for d in alt["diff"]}
+        assert changes["Alt1"] == changes["Alt2"] == "added"
+        assert changes["A4"] == changes["A5"] == "removed"
+        assert alt["diff"][0]["family_frequency"] == pytest.approx(0.5, abs=0.05)
+        assert alt["label"].startswith("Trait A0 ")
+        assert "+Alt" in alt["label"] and "-A" in alt["label"]
+
+    def test_counters_are_exact_over_the_variants_boards(self):
+        boards = self.boards()
+        rows, variant_ids = self.variants(boards)
+
+        for row_ in rows:
+            members = [i for i in range(len(boards)) if variant_ids[i] == row_["variant_id"]]
+            placements = boards.placements[members]
+            assert row_["boards"] == len(members)
+            assert row_["placement_sum"] == int(placements.sum())
+            assert row_["top4_count"] == int((placements <= 4).sum())
+            assert row_["win_count"] == int((placements == 1).sum())
+
+    def test_ids_are_stable_across_reruns(self):
+        boards = self.boards()
+
+        first, _ = self.variants(boards)
+        second, _ = self.variants(boards)
+
+        assert [r["variant_id"] for r in first] == [r["variant_id"] for r in second]
+        assert len({r["variant_id"] for r in first}) == 2
+
+    def test_one_way_of_playing_it_is_not_split(self):
+        rows, variant_ids = self.variants(self.boards(base=300, alt=0))
+
+        assert rows == []
+        assert all(v is None for v in variant_ids)
+
+    def test_a_small_comp_has_no_variants(self):
+        rows, _ = self.variants(self.boards(base=30, alt=30))
+
+        assert rows == []
+
+    def test_boards_without_a_comp_are_left_alone(self):
+        boards = self.boards()
+        comp_ids = np.full(len(boards), None, dtype=object)
+
+        rows, variant_ids = find_variants(boards, comp_ids, {}, {}, PATCH)
+
+        assert rows == []
+        assert all(v is None for v in variant_ids)
+
+
 class TestCategorize:
     COSTS = {"One": 1, "OneB": 1, "Two": 2, "Three": 3, "Four": 4, "FourB": 4, "Five": 5, "FiveB": 5}
 
@@ -395,12 +502,42 @@ class TestWrite:
         assert len(fake_bq.staged("compositions")) == 1
         assert len(fake_bq.staged("participant_compositions")) == 3
         assert len(fake_bq.deleted) == 2  # both staging tables dropped
+        # the patch's variants are cleared too, even when there are none to insert
+        assert "DELETE FROM `test-project.tft.composition_variants` WHERE patch = @patch;" in script
+        assert "INSERT INTO `test-project.tft.composition_variants`" not in script
+
+    def test_variants_and_their_ids_are_written_with_the_comps(self, fake_bq):
+        boards = TestFindVariants().boards()
+        comp_ids = np.full(len(boards), "fam", dtype=object)
+        variants, variant_ids = find_variants(boards, comp_ids, {"fam": "Trait A0"}, {}, PATCH)
+        comps = [{**self.rows()[0][0], "comp_id": "fam"}]
+        assignments = [
+            {
+                "match_id": str(boards.match_ids[i]),
+                "puuid": str(boards.puuids[i]),
+                "played_at": boards.played_at[i],
+                "patch": PATCH,
+                "comp_id": "fam",
+                "similarity": 0.9,
+                "variant_id": variant_ids[i],
+            }
+            for i in range(len(boards))
+        ]
+
+        write_compositions(fake_bq, PATCH, comps, assignments, variants)
+
+        (script, _), = fake_bq.queries
+        delete = "DELETE FROM `test-project.tft.composition_variants` WHERE patch = @patch;"
+        assert script.index(delete) < script.index("INSERT INTO `test-project.tft.composition_variants`")
+        assert len(fake_bq.staged("composition_variants")) == len(variants) == 2
+        staged = fake_bq.staged("participant_compositions")
+        assert {a["variant_id"] for a in staged} >= {v["variant_id"] for v in variants}
 
     def test_a_patch_with_no_assignments_is_still_cleared(self, fake_bq):
         write_compositions(fake_bq, PATCH, [], [])
 
         (script, _), = fake_bq.queries
-        assert script.count("DELETE FROM") == 2
+        assert script.count("DELETE FROM") == 3
         assert "INSERT INTO" not in script
 
 

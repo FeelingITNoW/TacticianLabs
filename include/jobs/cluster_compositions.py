@@ -47,6 +47,7 @@ def main(argv: list[str] | None = None) -> int:
         print("No patches yet: ingest some matches first")
         return 1
 
+    variants: list[dict] = []
     comps = cluster_patch(
         client,
         patch,
@@ -54,6 +55,7 @@ def main(argv: list[str] | None = None) -> int:
         min_cluster_size=args.min_cluster_size,
         seed=args.seed,
         dry_run=args.dry_run,
+        variants_out=variants,
     )
     if args.dry_run:
         for comp in sorted(comps, key=lambda c: -c["boards"]):
@@ -64,6 +66,15 @@ def main(argv: list[str] | None = None) -> int:
                 f"boards={comp['boards']:<7} "
                 f"avg_place={average:.2f}  carries: {carries}"
             )
+            for variant in sorted(
+                (v for v in variants if v["comp_id"] == comp["comp_id"]),
+                key=lambda v: -v["boards"],
+            ):
+                variant_average = variant["placement_sum"] / variant["boards"]
+                print(
+                    f"{'':>14}    {variant['label']:<44} "
+                    f"boards={variant['boards']:<7} avg_place={variant_average:.2f}"
+                )
     return 0 if comps else 1
 
 

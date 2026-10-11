@@ -4,5 +4,6 @@
   {"name": "played_at", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "Copied from matches for partitioning"},
   {"name": "patch", "type": "STRING", "mode": "REQUIRED", "description": "matches.game_version"},
   {"name": "comp_id", "type": "STRING", "mode": "REQUIRED", "description": "compositions.comp_id for the same patch"},
-  {"name": "similarity", "type": "FLOAT64", "description": "Cosine similarity of the board's vector to the comp's centroid (0-1)"}
+  {"name": "similarity", "type": "FLOAT64", "description": "Cosine similarity of the board's vector to the comp's centroid (0-1)"},
+  {"name": "variant_id", "type": "STRING", "description": "composition_variants.variant_id when the board fits one of the comp's variants; NULL for the comp's base build"}
 ]
