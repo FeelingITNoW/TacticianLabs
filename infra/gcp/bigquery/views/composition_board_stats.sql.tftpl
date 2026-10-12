@@ -1,0 +1,17 @@
+-- A comp's boards grouped by one value of the board (${key}), per patch, with the same
+-- rates as composition_stats. share_of_comp is the share of the comp's boards with that value.
+SELECT
+  t.patch,
+  t.comp_id,
+  c.label AS comp_label,
+  c.category AS comp_category,
+  t.${key},
+  t.boards AS games,
+  SAFE_DIVIDE(t.win_count, t.boards) AS win_rate,
+  SAFE_DIVIDE(t.top4_count, t.boards) AS top4_rate,
+  SAFE_DIVIDE(t.placement_sum, t.boards) AS average_placement,
+  SAFE_DIVIDE(t.boards, c.boards) AS share_of_comp,
+  t.matches,
+  t.updated_at
+FROM `${project}.${dataset}.${totals}` AS t
+JOIN `${project}.${dataset}.compositions` AS c USING (patch, comp_id)

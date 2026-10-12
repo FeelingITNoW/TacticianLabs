@@ -4,11 +4,11 @@ Run with `PYTHONPATH=include python -m insights.nl_to_sql "which champions are b
 Needs Application Default Credentials, GOOGLE_CLOUD_PROJECT, GEMINI_API_KEY and
 GEMINI_SQL_MODEL (the Gemini model that writes the SQL).
 
-The model gets two tools. `sql` (run_sql) dry-runs each query first and refuses anything
-that isn't a SELECT over prompt.VIEWS or that would bill more than MAX_BYTES_BILLED.
-`trios` runs a fixed query for the best 3-item builds on a champion (item_trios.py),
-since those aren't kept as counters. Errors go back to the model as the tool result, so
-it can fix its own call. The text the model reads lives in insights/prompt.py.
+The model gets one tool, `sql` (run_sql), which dry-runs each query first and refuses
+anything that isn't a SELECT over prompt.VIEWS or that would bill more than
+MAX_BYTES_BILLED. Every view reads precomputed counters (3-item builds and comps' star
+levels, items and board costs included), so a question costs kilobytes to megabytes.
+Errors go back to the model as the tool result, so it can fix its own call. The text the model reads lives in insights/prompt.py.
 """
 
 import argparse
@@ -24,7 +24,6 @@ from google.genai import types
 from db.bq import DATASET, make_client, table_ref
 from insights import prompt
 from insights.common import MAX_BYTES_BILLED, MAX_ROWS, json_rows
-from insights.item_trios import item_trios
 
 MAX_TOOL_CALLS = 8
 
@@ -138,10 +137,6 @@ def ask(
         """Run one BigQuery SELECT over the stats views and return up to 200 rows, or [{"error": ...}] to fix and retry."""
         return keep(run_sql(client, query, answer.queries))
 
-    def trios(champion: str, min_games: int = 30) -> list[dict]:
-        """The best full 3-item builds on one champion in the latest patch, best average placement first. `champion` is its name, e.g. "Kha'Zix". Use this instead of `sql` for builds of three items."""
-        return keep(item_trios(client, champion, min_games, answer.queries))
-
     def keep(rows: list[dict]) -> list[dict]:
         if not (len(rows) == 1 and "error" in rows[0]):
             answer.rows = rows
@@ -152,7 +147,7 @@ def ask(
         contents=question,
         config=types.GenerateContentConfig(
             system_instruction=build_context(client),
-            tools=[sql, trios],
+            tools=[sql],
             automatic_function_calling=types.AutomaticFunctionCallingConfig(
                 maximum_remote_calls=MAX_TOOL_CALLS
             ),

@@ -2,11 +2,13 @@
 
 import random
 from collections import Counter
+from datetime import datetime, timezone
 
 import numpy as np
 import pytest
 
 from data_aggregation import compositions
+from data_aggregation.data_aggregation import COMPOSITION_TOTALS
 from data_aggregation.compositions import (
     BOARDS_SQL,
     assign,
@@ -494,7 +496,13 @@ class TestWrite:
         (script, params), = fake_bq.queries
         assert script.startswith("BEGIN TRANSACTION;")
         assert script.rstrip().endswith("COMMIT TRANSACTION;")
-        assert [(p.name, p.value) for p in params] == [("patch", PATCH)]
+        # lo..hi: the days the assigned boards were played on, for the comp totals
+        played = datetime(2026, 9, 28, 12, tzinfo=timezone.utc)
+        assert [(p.name, p.value) for p in params] == [
+            ("patch", PATCH),
+            ("lo", played),
+            ("hi", played),
+        ]
         for table in ("compositions", "participant_compositions"):
             delete = f"DELETE FROM `test-project.tft.{table}` WHERE patch = @patch;"
             assert delete in script
@@ -505,6 +513,18 @@ class TestWrite:
         # the patch's variants are cleared too, even when there are none to insert
         assert "DELETE FROM `test-project.tft.composition_variants` WHERE patch = @patch;" in script
         assert "INSERT INTO `test-project.tft.composition_variants`" not in script
+
+    def test_rebuilds_the_comp_totals_from_the_new_assignments(self, fake_bq):
+        comps, assignments = self.rows()
+
+        write_compositions(fake_bq, PATCH, comps, assignments)
+
+        (script, _), = fake_bq.queries
+        assignments_insert = script.index("INSERT INTO `test-project.tft.participant_compositions`")
+        for table in COMPOSITION_TOTALS:
+            delete = f"DELETE FROM `test-project.tft.{table}` WHERE patch = @patch;"
+            assert script.index(delete) > assignments_insert
+            assert script.index(delete) < script.index(f"INSERT INTO `test-project.tft.{table}`")
 
     def test_variants_and_their_ids_are_written_with_the_comps(self, fake_bq):
         boards = TestFindVariants().boards()
@@ -537,7 +557,8 @@ class TestWrite:
         write_compositions(fake_bq, PATCH, [], [])
 
         (script, _), = fake_bq.queries
-        assert script.count("DELETE FROM") == 3
+        # the comps, variants and assignments, and the comp totals built from them
+        assert script.count("DELETE FROM") == 3 + len(COMPOSITION_TOTALS)
         assert "INSERT INTO" not in script
 
 
