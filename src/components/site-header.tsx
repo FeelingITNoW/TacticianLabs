@@ -8,6 +8,7 @@ const NAV = [
   { to: '/items', label: 'Items' },
   { to: '/leaderboard', label: 'Leaderboard' },
   { to: '/explorer', label: 'Explorer' },
+  { to: '/ask', label: 'Ask' },
 ] as const
 
 export function SiteHeader({ meta }: { meta: Meta | null }) {

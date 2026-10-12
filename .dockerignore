@@ -29,3 +29,15 @@ README.md
 **/*.tfstate.backup
 **/.terraform
 tfplan
+
+# Not needed to build the web image
+**/dist
+.venv
+.venv-1
+.github
+infra
+dags
+tests
+logs
+files
+**/__pycache__

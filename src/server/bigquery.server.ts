@@ -3,6 +3,7 @@ import { BigQuery } from '@google-cloud/bigquery'
 
 // Local runs use Application Default Credentials (`gcloud auth application-default login`).
 // Never hand this the data-editor service account from .env: the web app only reads.
+// Hosts without gcloud (Railway) set GOOGLE_CREDENTIALS_JSON to a read-only service account key.
 const DATASET = process.env.BQ_DATASET ?? 'tft'
 const LOCATION = process.env.BQ_LOCATION ?? 'us-central1'
 const DEFAULT_MAX_BYTES = 500_000_000
@@ -15,11 +16,22 @@ function projectId(): string {
   return id
 }
 
+function credentials(): object | undefined {
+  const json = process.env.GOOGLE_CREDENTIALS_JSON
+  if (!json) return undefined
+  try {
+    return JSON.parse(json)
+  } catch {
+    throw new Error('GOOGLE_CREDENTIALS_JSON is not valid JSON')
+  }
+}
+
 function bq(): BigQuery {
   // JOB_CREATION_OPTIONAL lets short queries skip creating a job. Setting jobTimeoutMs
   // would silently turn it off, so no timeout is set here.
   return (client ??= new BigQuery({
     projectId: projectId(),
+    credentials: credentials(),
     defaultJobCreationMode: 'JOB_CREATION_OPTIONAL',
   }))
 }

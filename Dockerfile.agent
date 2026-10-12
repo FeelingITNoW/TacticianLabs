@@ -1,0 +1,17 @@
+# The SQL agent behind the web app's /ask page (railway.agent.json points here).
+FROM python:3.12-slim
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1 PYTHONPATH=/app/include
+
+COPY requirements-agent.txt ./
+RUN pip install --no-cache-dir -r requirements-agent.txt
+
+# insights imports db.bq only, so those two packages are all it needs
+COPY include/insights ./include/insights
+COPY include/db/bq.py ./include/db/bq.py
+
+RUN useradd --create-home agent
+USER agent
+# Binds to $PORT (set by Railway); AGENT_HOST=:: for the private network
+ENV AGENT_HOST=::
+CMD ["python", "-m", "insights.server"]

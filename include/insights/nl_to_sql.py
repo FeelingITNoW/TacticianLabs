@@ -26,6 +26,7 @@ from insights import prompt
 from insights.common import MAX_BYTES_BILLED, MAX_ROWS, json_rows
 
 MAX_TOOL_CALLS = 8
+MAX_HISTORY_TURNS = 6
 
 _contexts: dict[str, str] = {}
 _allowed: dict[str, set[str]] = {}
@@ -123,9 +124,21 @@ def run_sql(client: bigquery.Client, query: str, log: list[str]) -> list[dict]:
     return json_rows(rows)
 
 
+def build_contents(question: str, history: list[dict] | None) -> list[types.Content]:
+    """Earlier turns (only their text, last MAX_HISTORY_TURNS) followed by the question."""
+    turns = (history or [])[-MAX_HISTORY_TURNS:]
+    contents = [
+        types.Content(role=turn["role"], parts=[types.Part(text=turn["text"])])
+        for turn in turns
+    ]
+    contents.append(types.Content(role="user", parts=[types.Part(text=question)]))
+    return contents
+
+
 def ask(
     question: str,
     *,
+    history: list[dict] | None = None,
     client: bigquery.Client | None = None,
     genai_client: genai.Client | None = None,
 ) -> Answer:
@@ -144,7 +157,7 @@ def ask(
 
     response = genai_client.models.generate_content(
         model=os.environ["GEMINI_SQL_MODEL"],
-        contents=question,
+        contents=build_contents(question, history),
         config=types.GenerateContentConfig(
             system_instruction=build_context(client),
             tools=[sql],
