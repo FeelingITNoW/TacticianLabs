@@ -31,7 +31,7 @@ locals {
       clustering      = ["match_id"]
     }
     patch_totals = {
-      description     = "Cumulative per-patch match and board counts, the denominators for the stats views."
+      description     = "Cumulative per-patch match, board and result counts (placement sum, top 4s, wins), the denominators for the stats views and the baseline for their without-the-entity deltas."
       primary_key     = ["patch"]
       partition_field = null
       clustering      = null
@@ -63,6 +63,12 @@ locals {
     composition_board_cost_totals = {
       description     = "Per-patch counters of each comp's boards by board cost, rebuilt by the clustering job with the comps. Read through the composition_board_cost_stats view."
       primary_key     = ["patch", "comp_id", "board_cost"]
+      partition_field = null
+      clustering      = null
+    }
+    composition_trait_totals = {
+      description     = "Per-patch counters of each comp's boards by each active trait and its tier, rebuilt by the clustering job with the comps. Read through the composition_trait_stats view."
+      primary_key     = ["patch", "comp_id", "trait", "tier"]
       partition_field = null
       clustering      = null
     }
@@ -255,6 +261,16 @@ locals {
       vars        = { totals = "composition_board_cost_totals", key = "board_cost" }
       description = "Per-patch stats of each comp's boards by board cost, from composition_board_cost_totals."
     }
+    composition_unit_stats = {
+      file        = "composition_unit_stats.sql.tftpl"
+      vars        = {}
+      description = "Per-patch stats of each unit on a comp's boards, with the comp's boards without it as a baseline, from composition_star_totals."
+    }
+    composition_trait_stats = {
+      file        = "composition_trait_stats.sql.tftpl"
+      vars        = {}
+      description = "Per-patch stats of each active trait on a comp's boards, with the comp's boards without it as a baseline, from composition_trait_totals."
+    }
   }
 
   # What dashboards and LLM queries read: the latest patch only, with display names
@@ -315,6 +331,14 @@ locals {
     current_composition_board_cost_stats = {
       file        = "current_composition_board_cost_stats.sql.tftpl"
       description = "composition_board_cost_stats for the latest patch."
+    }
+    current_composition_unit_stats = {
+      file        = "current_composition_unit_stats.sql.tftpl"
+      description = "composition_unit_stats for the latest patch."
+    }
+    current_composition_trait_stats = {
+      file        = "current_composition_trait_stats.sql.tftpl"
+      description = "composition_trait_stats for the latest patch."
     }
     leaderboard = {
       file        = "leaderboard.sql.tftpl"

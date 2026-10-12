@@ -1,0 +1,38 @@
+-- Each active trait on a comp's boards, per patch: the comp's boards where it was active (any
+-- tier) against the comp's other boards (_without).
+--   delta: average_placement - the average placement of all the comp's boards
+-- (including these), so a negative delta is how many places having the trait active is worth within the comp
+WITH traits AS (
+  SELECT
+    patch, comp_id, trait,
+    SUM(boards) AS boards,
+    SUM(placement_sum) AS placement_sum,
+    SUM(top4_count) AS top4_count,
+    SUM(win_count) AS win_count,
+    SAFE_DIVIDE(SUM(tier * boards), SUM(boards)) AS avg_tier,
+    MAX(updated_at) AS updated_at
+  FROM `${project}.${dataset}.composition_trait_totals`
+  GROUP BY patch, comp_id, trait
+)
+SELECT
+  t.patch,
+  t.comp_id,
+  c.label AS comp_label,
+  c.category AS comp_category,
+  t.trait,
+  COALESCE(tr.name, t.trait) AS trait_name,
+  t.avg_tier,
+  t.boards AS games,
+  SAFE_DIVIDE(t.boards, c.boards) AS share_of_comp,
+  SAFE_DIVIDE(t.win_count, t.boards) AS win_rate,
+  SAFE_DIVIDE(t.top4_count, t.boards) AS top4_rate,
+  SAFE_DIVIDE(t.placement_sum, t.boards) AS average_placement,
+  c.boards - t.boards AS games_without,
+  SAFE_DIVIDE(c.win_count - t.win_count, c.boards - t.boards) AS win_rate_without,
+  SAFE_DIVIDE(c.top4_count - t.top4_count, c.boards - t.boards) AS top4_rate_without,
+  SAFE_DIVIDE(c.placement_sum - t.placement_sum, c.boards - t.boards) AS average_placement_without,
+  SAFE_DIVIDE(t.placement_sum, t.boards) - SAFE_DIVIDE(c.placement_sum, c.boards) AS delta,
+  t.updated_at
+FROM traits AS t
+JOIN `${project}.${dataset}.compositions` AS c USING (patch, comp_id)
+LEFT JOIN `${project}.${dataset}.traits` AS tr ON tr.api_name = t.trait

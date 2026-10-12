@@ -88,7 +88,9 @@ class TestCounts:
 
     @pytest.mark.parametrize("totals", list(TOTALS))
     def test_columns_line_up_with_the_table(self, fake_bq, totals):
-        assert [*value_columns(totals), "updated_at"] == column_names(fake_bq, totals)
+        # Compared as sets: every statement names its columns, and patch_totals' newer
+        # columns come after updated_at so Terraform can add them in place
+        assert {*value_columns(totals), "updated_at"} == set(column_names(fake_bq, totals))
 
 
 class TestResolvers:
@@ -151,8 +153,8 @@ class TestMerge:
                 fake_bq, name, new_resolver(fake_bq, STAGING), old_resolver(fake_bq)
             )
             insert_columns = sql.split("INSERT (")[1].split(")")[0]
-            assert [c.strip() for c in insert_columns.split(",")] == column_names(
-                fake_bq, name
+            assert {c.strip() for c in insert_columns.split(",")} == set(
+                column_names(fake_bq, name)
             )
 
     def test_one_statement_per_ingest_totals_table(self, fake_bq):
@@ -187,8 +189,8 @@ class TestRebuild:
         for name in TOTALS:
             insert = sql.split(f"INSERT INTO `test-project.tft.{name}` (")[1]
             insert_columns = insert.split(")")[0]
-            assert [c.strip() for c in insert_columns.split(",")] == column_names(
-                fake_bq, name
+            assert {c.strip() for c in insert_columns.split(",")} == set(
+                column_names(fake_bq, name)
             )
 
     def test_runs_one_query(self, fake_bq):
@@ -391,11 +393,12 @@ class TestTrios:
 
 
 class TestCompositionTotals:
-    def test_are_the_three_comp_tables(self):
+    def test_are_the_comp_tables(self):
         assert COMPOSITION_TOTALS == [
             "composition_star_totals",
             "composition_completed_item_totals",
             "composition_board_cost_totals",
+            "composition_trait_totals",
         ]
 
     @pytest.mark.parametrize("totals", COMPOSITION_TOTALS)
@@ -416,3 +419,23 @@ class TestCompositionTotals:
 
         for table in ("participant_compositions", "participant_units", "participants"):
             assert f"FROM `test-project.tft.{table}` WHERE played_at BETWEEN @lo AND @hi" in sql
+
+
+class TestDeltaCounters:
+    def test_patch_totals_counts_results(self, fake_bq):
+        sql = counts_sql("patch_totals", live_resolver(fake_bq))
+
+        for counter in ("placement_sum", "top4_count", "win_count"):
+            assert f"AS {counter}" in sql
+
+    def test_patch_totals_adds_results_on_merge(self, fake_bq):
+        sql = merge_sql(fake_bq, "patch_totals", new_resolver(fake_bq, STAGING), old_resolver(fake_bq))
+
+        assert "placement_sum = t.placement_sum + s.placement_sum" in sql
+        assert "win_count = t.win_count + s.win_count" in sql
+
+    def test_comp_traits_count_active_traits_only(self, fake_bq):
+        sql = counts_sql("composition_trait_totals", live_resolver(fake_bq))
+
+        assert "tr.tier_current > 0" in sql
+        assert "JOIN `test-project.tft.participant_traits` AS tr" in sql

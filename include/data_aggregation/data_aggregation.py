@@ -129,8 +129,30 @@ TOTALS: dict[str, Totals] = {
         ),
         clustered=True,
     ),
+    # Active traits on a comp's boards, by tier. A board has one row per trait, so the tier
+    # rows of a trait are disjoint and summing them gives the boards that had it active.
+    "composition_trait_totals": Totals(
+        ("comp_id", "trait", "tier"),
+        lambda t: (
+            "SELECT pc.match_id, pc.puuid, pc.comp_id, tr.trait, tr.tier_current AS tier "
+            f"FROM {t('participant_compositions')} AS pc "
+            f"JOIN {t('participant_traits')} AS tr USING (match_id, puuid) "
+            "WHERE tr.tier_current > 0"
+        ),
+        clustered=True,
+    ),
     "patch_totals": Totals(
-        (), None, counters=("matches", "boards", "last_played_at"), maxima=("last_played_at",)
+        (),
+        None,
+        counters=(
+            "matches",
+            "boards",
+            "last_played_at",
+            "placement_sum",
+            "top4_count",
+            "win_count",
+        ),
+        maxima=("last_played_at",),
     ),
 }
 
@@ -192,7 +214,10 @@ SELECT
   m.game_version AS patch,
   {sign} * COUNT(DISTINCT m.match_id) AS matches,
   {sign} * COUNT(*) AS boards,
-  MAX(m.played_at) AS last_played_at
+  MAX(m.played_at) AS last_played_at,
+  {sign} * SUM(p.placement) AS placement_sum,
+  {sign} * COUNTIF(p.placement <= 4) AS top4_count,
+  {sign} * COUNTIF(p.placement = 1) AS win_count
 FROM {t("matches")} AS m
 JOIN {t("participants")} AS p USING (match_id)
 WHERE m.queue_id = {TFT_RANKED_QUEUE_ID}

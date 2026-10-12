@@ -20,6 +20,8 @@ VIEWS = (
     "current_composition_star_upgrade_stats",
     "current_composition_completed_item_stats",
     "current_composition_board_cost_stats",
+    "current_composition_unit_stats",
+    "current_composition_trait_stats",
 )
 
 # TODO: the role and the hard rules. For example: you answer Teamfight Tactics
@@ -93,6 +95,17 @@ GLOSSARY = """
   the comp's boards that fit the variant; the rest are the comp's base build and are in no variant row. Join
   to current_composition_stats on comp_id to compare a variant with its comp. current_participant_compositions
   has variant_id too (NULL for the base build).
+- Deltas (how much having something is worth): delta = average_placement of the boards that have it minus the
+  average placement of ALL boards of its baseline, so a NEGATIVE delta is how many places having it is worth (more
+  negative = matters more). The baseline is: current_champion_item_stats, all of that champion's boards;
+  current_champion_stats, current_trait_stats and current_item_stats, all boards in the patch (traits count only
+  when active); the two views below, all of the comp's boards. The *_without columns are the boards outside the
+  entity, for context. Compare deltas only with enough games (30 or more).
+- current_composition_unit_stats / current_composition_trait_stats: one row per comp and unit (or active trait)
+  seen on its boards, with games, share_of_comp, the stats of those boards, the _without columns and
+  delta. is_core marks the comp's listed units, is_carry its carries; avg_star and avg_tier are
+  the average star level / trait tier. Units and traits in nearly every board of
+  the comp have a delta near 0 and say little.
 - Prefer the aggregated stats views; use the two game-level views only when a question needs individual games
   (distributions, "how often did X happen in a game"). Filter on played_at or aggregate, and never SELECT *
   without a LIMIT.
@@ -173,4 +186,25 @@ ANSWER: the upgrade with the largest average_placement_delta, with both board co
 then the next few. Lead with the carries (is_carry) since they decide the comp, but call out a non-carry upgrade
 that beats them. Show the table, and note that boards which hit an upgrade also tend
 to have survived longer and rolled more, so the delta overstates what the upgrade alone is worth.
+
+Q: Which item matters most on Kha'Zix?
+SQL:
+SELECT item_name, games, ROUND(average_placement, 2) AS average_placement, games_without, ROUND(average_placement_without, 2) AS average_placement_without, ROUND(delta, 2) AS delta
+FROM `{dataset}.current_champion_item_stats`
+WHERE champion_name = 'Kha''Zix' AND games >= 30
+ORDER BY delta ASC
+LIMIT 10
+ANSWER: the item with the most negative delta, with both board counts, then the next few. Note that
+stronger boards are likelier to hold good items, so the delta overstates what the item alone is worth.
+
+Q: Which units and traits matter most in Executioner Draven fast 9?
+STEP 1: SELECT comp_id, label, category FROM `{dataset}.current_composition_stats` WHERE label LIKE '%Draven%'
+STEP 2:
+SELECT champion_name, is_carry, games, games_without, ROUND(average_placement, 2) AS average_placement, ROUND(average_placement_without, 2) AS average_placement_without, ROUND(delta, 2) AS delta
+FROM `{dataset}.current_composition_unit_stats`
+WHERE comp_id = '<comp_id from step 1>' AND games >= 30
+ORDER BY delta ASC
+STEP 3: the same over `{dataset}.current_composition_trait_stats` (trait_name instead of champion_name and is_carry).
+ANSWER: the units and traits with the most negative delta, with board counts, and the caveat that
+boards with stronger units are also the stronger boards.
 """

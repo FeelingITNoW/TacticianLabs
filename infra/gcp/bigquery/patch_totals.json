@@ -3,5 +3,8 @@
   {"name": "matches", "type": "INT64", "mode": "REQUIRED", "description": "Ranked matches ingested in the patch"},
   {"name": "boards", "type": "INT64", "mode": "REQUIRED", "description": "Participants in those matches (8 per match)"},
   {"name": "last_played_at", "type": "TIMESTAMP", "description": "Newest match in the patch; the latest patch is the one with the newest value"},
-  {"name": "updated_at", "type": "TIMESTAMP"}
+  {"name": "updated_at", "type": "TIMESTAMP"},
+  {"name": "placement_sum", "type": "INT64", "description": "Sum of all the patch's boards' placements (1-8); NULL on rows written before this column existed, until jobs.rebuild_stats --table patch_totals"},
+  {"name": "top4_count", "type": "INT64", "description": "Boards that placed 1-4"},
+  {"name": "win_count", "type": "INT64", "description": "Boards that placed 1st"}
 ]
