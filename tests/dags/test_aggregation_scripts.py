@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 import pytest
 
 from data_aggregation.data_aggregation import (
+    COMPOSITION_TOTALS,
+    INGEST_TOTALS,
     TOTALS,
     check_sql,
     check_totals,
@@ -153,12 +155,20 @@ class TestMerge:
                 fake_bq, name
             )
 
-    def test_one_statement_per_totals_table(self, fake_bq):
+    def test_one_statement_per_ingest_totals_table(self, fake_bq):
         merges = merge_totals_sql(fake_bq, STAGING)
 
-        assert len(merges) == len(TOTALS)
-        for name, sql in zip(TOTALS, merges):
+        assert len(merges) == len(INGEST_TOTALS)
+        for name, sql in zip(INGEST_TOTALS, merges):
             assert f"MERGE `test-project.tft.{name}`" in sql
+
+    def test_ingest_writes_never_touch_the_comp_totals(self, fake_bq):
+        # Ingest doesn't know the comps; the clustering job rebuilds these
+        merges = "\n".join(merge_totals_sql(fake_bq, STAGING))
+
+        assert COMPOSITION_TOTALS
+        for name in COMPOSITION_TOTALS:
+            assert name not in merges
 
 
 class TestRebuild:
@@ -239,7 +249,7 @@ class TestTotalsSqlCompiles:
 
         assert [f.name for f in job.schema] == value_columns(totals)
 
-    @pytest.mark.parametrize("totals", list(TOTALS))
+    @pytest.mark.parametrize("totals", INGEST_TOTALS)
     def test_merge(self, client, totals):
         from datetime import datetime, timezone
 
@@ -365,3 +375,44 @@ class TestScopedRebuild:
 
         assert latest_patch(fake_bq) == "16.19.1"
         assert "ORDER BY last_played_at DESC LIMIT 1" in fake_bq.queries[0][0]
+
+
+class TestTrios:
+    def test_a_build_is_a_unit_with_exactly_three_items_in_order(self, fake_bq):
+        sql = counts_sql("champion_item_trio_totals", live_resolver(fake_bq))
+
+        assert "USING (match_id, puuid, slot)" in sql
+        assert "GROUP BY u.match_id, u.puuid, u.slot, u.champion" in sql
+        assert "HAVING COUNT(*) = 3" in sql
+        assert "ARRAY_AGG(i.item ORDER BY i.item)" in sql
+
+    def test_is_merged_by_ingest_writes(self, fake_bq):
+        assert "champion_item_trio_totals" in INGEST_TOTALS
+
+
+class TestCompositionTotals:
+    def test_are_the_three_comp_tables(self):
+        assert COMPOSITION_TOTALS == [
+            "composition_star_totals",
+            "composition_completed_item_totals",
+            "composition_board_cost_totals",
+        ]
+
+    @pytest.mark.parametrize("totals", COMPOSITION_TOTALS)
+    def test_count_boards_by_their_assigned_comp(self, fake_bq, totals):
+        sql = counts_sql(totals, live_resolver(fake_bq))
+
+        assert "FROM `test-project.tft.participant_compositions` AS pc" in sql
+        assert "pc.comp_id" in sql
+
+    def test_a_unit_counts_once_per_board_at_its_best_copy(self, fake_bq):
+        sql = counts_sql("composition_star_totals", live_resolver(fake_bq))
+
+        assert "MAX(u.star) AS star" in sql
+        assert "GROUP BY pc.match_id, pc.puuid, pc.comp_id, u.champion" in sql
+
+    def test_a_patch_rebuild_reads_only_the_patch_days(self, fake_bq):
+        sql = rebuild_sql(fake_bq, COMPOSITION_TOTALS, patch=True)
+
+        for table in ("participant_compositions", "participant_units", "participants"):
+            assert f"FROM `test-project.tft.{table}` WHERE played_at BETWEEN @lo AND @hi" in sql

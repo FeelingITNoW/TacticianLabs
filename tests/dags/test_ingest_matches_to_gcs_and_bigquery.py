@@ -528,13 +528,13 @@ class TestWriteMatches:
         assert statements[-1] == "COMMIT TRANSACTION"
 
     def test_totals_are_updated_before_the_rows_they_read_are_deleted(self, fake_bq):
-        from data_aggregation.data_aggregation import TOTALS
+        from data_aggregation.data_aggregation import INGEST_TOTALS
 
         _write(fake_bq, {"m": json.dumps(make_match_data_ranked_game())})
 
         (sql, _), = fake_bq.queries
         first_delete = sql.index("DELETE FROM")
-        for table in TOTALS:
+        for table in INGEST_TOTALS:
             assert 0 < sql.index(f"MERGE `test-project.tft.{table}`") < first_delete
 
     def test_deletes_are_bounded_by_match_ids_and_dates(self, fake_bq):

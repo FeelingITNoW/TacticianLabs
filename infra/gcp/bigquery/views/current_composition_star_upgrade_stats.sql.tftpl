@@ -1,0 +1,3 @@
+SELECT s.*
+FROM `${project}.${dataset}.composition_star_upgrade_stats` AS s
+WHERE s.patch = (SELECT patch FROM `${project}.${dataset}.patch_totals` ORDER BY last_played_at DESC LIMIT 1)

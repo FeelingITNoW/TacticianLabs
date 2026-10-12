@@ -1,7 +1,11 @@
-"""Cumulative per-patch counters for champions, traits, items and champion+item combos and pairs.
+"""Cumulative per-patch counters for champions, traits, items, champion+item combos, pairs
+and trios, and for comps' boards by star level, completed items and board cost.
 
 Every ingest write adds its matches' counts to the `*_totals` tables inside the
 same transaction that inserts the matches, so nothing is ever re-scanned. The
+composition_* totals are the exception: they count boards by the comp they were
+assigned to, which only the clustering job knows, so it rebuilds the patch's rows in
+the transaction that writes the comps (see Totals.clustered). The
 counters are integers that sum across matches (boards, matches, placement sum,
 top-4 and win counts), so rates derived from them in the stats views carry no
 rounding error. `rebuild_totals` recomputes everything from the match tables for
@@ -37,6 +41,9 @@ class Totals:
     counters: tuple[str, ...] = BOARD_COUNTERS
     # Counters merged with GREATEST instead of added
     maxima: tuple[str, ...] = ()
+    # Counts boards by participant_compositions: rebuilt by the clustering job, never
+    # merged by ingest writes (which don't know the comps)
+    clustered: bool = False
 
 
 TOTALS: dict[str, Totals] = {
@@ -77,10 +84,59 @@ TOTALS: dict[str, Totals] = {
             "WHERE a.item_index < b.item_index"
         ),
     ),
+    # A unit's full build: exactly 3 items, in api-name order (item_a <= item_b <= item_c)
+    "champion_item_trio_totals": Totals(
+        ("champion", "item_a", "item_b", "item_c"),
+        lambda t: (
+            "SELECT match_id, puuid, champion, items[OFFSET(0)] AS item_a, "
+            "items[OFFSET(1)] AS item_b, items[OFFSET(2)] AS item_c "
+            "FROM (SELECT u.match_id, u.puuid, u.champion, ARRAY_AGG(i.item ORDER BY i.item) AS items "
+            f"FROM {t('participant_units')} AS u "
+            f"JOIN {t('unit_items')} AS i USING (match_id, puuid, slot) "
+            "GROUP BY u.match_id, u.puuid, u.slot, u.champion "
+            "HAVING COUNT(*) = 3)"
+        ),
+    ),
+    # A comp's boards by each unit's star level: the highest copy's, so a board counts once per unit
+    "composition_star_totals": Totals(
+        ("comp_id", "champion", "star"),
+        lambda t: (
+            "SELECT pc.match_id, pc.puuid, pc.comp_id, u.champion, MAX(u.star) AS star "
+            f"FROM {t('participant_compositions')} AS pc "
+            f"JOIN {t('participant_units')} AS u USING (match_id, puuid) "
+            "WHERE u.star IS NOT NULL "
+            "GROUP BY pc.match_id, pc.puuid, pc.comp_id, u.champion"
+        ),
+        clustered=True,
+    ),
+    "composition_completed_item_totals": Totals(
+        ("comp_id", "completed_items"),
+        lambda t: (
+            "SELECT pc.match_id, pc.puuid, pc.comp_id, p.completed_items "
+            f"FROM {t('participant_compositions')} AS pc "
+            f"JOIN {t('participants')} AS p USING (match_id, puuid) "
+            "WHERE p.completed_items IS NOT NULL"
+        ),
+        clustered=True,
+    ),
+    "composition_board_cost_totals": Totals(
+        ("comp_id", "board_cost"),
+        lambda t: (
+            "SELECT pc.match_id, pc.puuid, pc.comp_id, p.board_cost "
+            f"FROM {t('participant_compositions')} AS pc "
+            f"JOIN {t('participants')} AS p USING (match_id, puuid) "
+            "WHERE p.board_cost IS NOT NULL"
+        ),
+        clustered=True,
+    ),
     "patch_totals": Totals(
         (), None, counters=("matches", "boards", "last_played_at"), maxima=("last_played_at",)
     ),
 }
+
+# What ingest writes merge into, and what the clustering job rebuilds
+INGEST_TOTALS = [name for name, spec in TOTALS.items() if not spec.clustered]
+COMPOSITION_TOTALS = [name for name, spec in TOTALS.items() if spec.clustered]
 
 
 # --- Table resolvers -------------------------------------------------------
@@ -211,14 +267,14 @@ WHEN NOT MATCHED AND s.boards > 0 THEN INSERT ({columns}) VALUES ({values});
 
 
 def merge_totals_sql(client: bigquery.Client, staging: dict[str, str]) -> list[str]:
-    """Statements that fold one write's matches into every totals table.
+    """Statements that fold one write's matches into every totals table but the clustered ones.
 
     They must run before the write's deletes (they read the rows being replaced)
     and inside the same transaction, so counters and matches commit together.
     """
     new = new_resolver(client, staging)
     old = old_resolver(client)
-    return [merge_sql(client, name, new, old) for name in TOTALS]
+    return [merge_sql(client, name, new, old) for name in INGEST_TOTALS]
 
 
 # --- Rebuild and check -----------------------------------------------------
@@ -270,17 +326,12 @@ def _selected(tables: Sequence[str] | None) -> list[str]:
     return names
 
 
-def rebuild_sql(
+def rebuild_statements(
     client: bigquery.Client, tables: Sequence[str] | None = None, patch: bool = False
-) -> str:
-    """Recompute totals tables from the match tables in one transaction.
-
-    By default every table, every patch. `tables` limits which tables. With `patch`
-    only the rows of the patch in @patch are replaced, counted from the days in
-    @lo..@hi (see patch_params), so older patches' rows are left alone.
-    """
+) -> list[str]:
+    """The DELETE and INSERT per table that rebuild_sql wraps in a transaction."""
     resolver = window_resolver(client) if patch else live_resolver(client)
-    statements = ["BEGIN TRANSACTION;"]
+    statements = []
     for name in _selected(tables):
         columns = ", ".join([*value_columns(name), "updated_at"])
         scope = " WHERE patch = @patch" if patch else ""
@@ -291,8 +342,20 @@ def rebuild_sql(
             f"INSERT INTO `{table_ref(client, name)}` ({columns})\n"
             f"SELECT *, CURRENT_TIMESTAMP() FROM ({counts_sql(name, resolver)}){scope};"
         )
-    statements.append("COMMIT TRANSACTION;")
-    return "\n".join(statements)
+    return statements
+
+
+def rebuild_sql(
+    client: bigquery.Client, tables: Sequence[str] | None = None, patch: bool = False
+) -> str:
+    """Recompute totals tables from the match tables in one transaction.
+
+    By default every table, every patch. `tables` limits which tables. With `patch`
+    only the rows of the patch in @patch are replaced, counted from the days in
+    @lo..@hi (see patch_params), so older patches' rows are left alone.
+    """
+    statements = rebuild_statements(client, tables, patch)
+    return "\n".join(["BEGIN TRANSACTION;", *statements, "COMMIT TRANSACTION;"])
 
 
 def rebuild_totals(

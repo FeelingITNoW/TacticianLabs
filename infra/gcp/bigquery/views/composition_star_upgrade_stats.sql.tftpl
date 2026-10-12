@@ -1,0 +1,42 @@
+-- What each one-star upgrade of a comp's units is worth, per patch: the comp's boards that
+-- held the unit one star below (_without) against the boards that hit the upgrade (_with).
+-- Upgrades are 1* -> 2* for every unit and 2* -> 3* for 1-3 costs only: a 3-star 4 or 5
+-- cost is a near-guaranteed win, not an upgrade to plan around. Only the comp's listed
+-- units (compositions.units) are included.
+--   average_placement_delta: average_placement_without - average_placement_with, so a
+--   positive delta is how many places hitting the upgrade is worth
+WITH stars AS (
+  SELECT s.*, ch.name, ch.cost
+  FROM `${project}.${dataset}.composition_star_totals` AS s
+  LEFT JOIN `${project}.${dataset}.champions` AS ch ON ch.api_name = s.champion
+)
+SELECT
+  hit.patch,
+  hit.comp_id,
+  c.label AS comp_label,
+  c.category AS comp_category,
+  hit.champion,
+  COALESCE(hit.name, hit.champion) AS champion_name,
+  hit.cost,
+  hit.champion IN UNNEST(c.carries) AS is_carry,
+  miss.star AS from_star,
+  hit.star AS to_star,
+  miss.boards AS games_without,
+  SAFE_DIVIDE(miss.placement_sum, miss.boards) AS average_placement_without,
+  SAFE_DIVIDE(miss.top4_count, miss.boards) AS top4_rate_without,
+  SAFE_DIVIDE(miss.win_count, miss.boards) AS win_rate_without,
+  hit.boards AS games_with,
+  SAFE_DIVIDE(hit.placement_sum, hit.boards) AS average_placement_with,
+  SAFE_DIVIDE(hit.top4_count, hit.boards) AS top4_rate_with,
+  SAFE_DIVIDE(hit.win_count, hit.boards) AS win_rate_with,
+  SAFE_DIVIDE(miss.placement_sum, miss.boards) - SAFE_DIVIDE(hit.placement_sum, hit.boards)
+    AS average_placement_delta,
+  hit.updated_at
+FROM stars AS hit
+JOIN stars AS miss
+  ON miss.patch = hit.patch AND miss.comp_id = hit.comp_id
+  AND miss.champion = hit.champion AND miss.star = hit.star - 1
+JOIN `${project}.${dataset}.compositions` AS c
+  ON c.patch = hit.patch AND c.comp_id = hit.comp_id
+WHERE (hit.star = 2 OR (hit.star = 3 AND hit.cost <= 3))
+  AND hit.champion IN (SELECT api_name FROM UNNEST(c.units))

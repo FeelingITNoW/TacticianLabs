@@ -48,6 +48,24 @@ locals {
       partition_field = null
       clustering      = null
     }
+    composition_star_totals = {
+      description     = "Per-patch counters of each comp's boards by each unit's star level, rebuilt by the clustering job with the comps (include/data_aggregation). Read through the composition_star_upgrade_stats view."
+      primary_key     = ["patch", "comp_id", "champion", "star"]
+      partition_field = null
+      clustering      = null
+    }
+    composition_completed_item_totals = {
+      description     = "Per-patch counters of each comp's boards by completed items held, rebuilt by the clustering job with the comps. Read through the composition_completed_item_stats view."
+      primary_key     = ["patch", "comp_id", "completed_items"]
+      partition_field = null
+      clustering      = null
+    }
+    composition_board_cost_totals = {
+      description     = "Per-patch counters of each comp's boards by board cost, rebuilt by the clustering job with the comps. Read through the composition_board_cost_stats view."
+      primary_key     = ["patch", "comp_id", "board_cost"]
+      partition_field = null
+      clustering      = null
+    }
     champions = {
       description     = "Set reference data from include/db/reference_data/tft-champion.json, keyed by Riot api name."
       primary_key     = ["api_name"]
@@ -165,6 +183,18 @@ locals {
         { column = "item_b", table = "items", references = "api_name" },
       ]
     }
+    champion_item_trio_totals = {
+      description     = "Cumulative per-patch counters per champion + full 3-item build (a unit holding exactly those items, item_a <= item_b <= item_c). Read through the champion_item_trio_stats view."
+      primary_key     = ["patch", "champion", "item_a", "item_b", "item_c"]
+      partition_field = null
+      clustering      = null
+      foreign_keys = [
+        { column = "champion", table = "champions", references = "api_name" },
+        { column = "item_a", table = "items", references = "api_name" },
+        { column = "item_b", table = "items", references = "api_name" },
+        { column = "item_c", table = "items", references = "api_name" },
+      ]
+    }
   }
 
   # Views over the totals tables. Rates are derived here from exact integer
@@ -204,6 +234,26 @@ locals {
       file        = "composition_variant_stats.sql.tftpl"
       vars        = {}
       description = "Per-patch stats for each comp variant derived from the composition_variants counters."
+    }
+    champion_item_trio_stats = {
+      file        = "champion_item_trio_stats.sql.tftpl"
+      vars        = {}
+      description = "Per-patch stats for each champion + full 3-item build derived from champion_item_trio_totals."
+    }
+    composition_star_upgrade_stats = {
+      file        = "composition_star_upgrade_stats.sql.tftpl"
+      vars        = {}
+      description = "Per-patch results of a comp's boards before and after each one-star upgrade of its units (2* -> 3* for 1-3 costs only), from composition_star_totals."
+    }
+    composition_completed_item_stats = {
+      file        = "composition_board_stats.sql.tftpl"
+      vars        = { totals = "composition_completed_item_totals", key = "completed_items" }
+      description = "Per-patch stats of each comp's boards by completed items held, from composition_completed_item_totals."
+    }
+    composition_board_cost_stats = {
+      file        = "composition_board_stats.sql.tftpl"
+      vars        = { totals = "composition_board_cost_totals", key = "board_cost" }
+      description = "Per-patch stats of each comp's boards by board cost, from composition_board_cost_totals."
     }
   }
 
@@ -249,6 +299,22 @@ locals {
     current_composition_variant_stats = {
       file        = "current_composition_variant_stats.sql.tftpl"
       description = "composition_variant_stats for the latest patch."
+    }
+    current_champion_item_trio_stats = {
+      file        = "current_champion_item_trio_stats.sql.tftpl"
+      description = "champion_item_trio_stats for the latest patch, with names."
+    }
+    current_composition_star_upgrade_stats = {
+      file        = "current_composition_star_upgrade_stats.sql.tftpl"
+      description = "composition_star_upgrade_stats for the latest patch."
+    }
+    current_composition_completed_item_stats = {
+      file        = "current_composition_completed_item_stats.sql.tftpl"
+      description = "composition_completed_item_stats for the latest patch."
+    }
+    current_composition_board_cost_stats = {
+      file        = "current_composition_board_cost_stats.sql.tftpl"
+      description = "composition_board_cost_stats for the latest patch."
     }
     leaderboard = {
       file        = "leaderboard.sql.tftpl"
@@ -376,9 +442,9 @@ resource "google_bigquery_table" "current_views" {
   depends_on = [google_bigquery_table.stats_views]
 }
 
-# The 3-item builds on one champion, counted from the match tables on demand. Shared by
-# the SQL agent's `trios` tool (include/insights/item_trios.py) and the web app, so the SQL
-# lives once. It reads the per-match tables, so callers pass the patch's time window.
+# The 3-item builds on one champion, counted from the match tables on demand, for the web
+# app (the SQL agent reads champion_item_trio_totals instead). It reads the per-match
+# tables, so callers pass the patch's time window.
 resource "google_bigquery_routine" "champion_item_trios" {
   dataset_id   = google_bigquery_dataset.tft.dataset_id
   routine_id   = "champion_item_trios"

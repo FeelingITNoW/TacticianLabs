@@ -39,6 +39,7 @@ from scipy import sparse
 from sklearn.cluster import HDBSCAN
 from sklearn.preprocessing import normalize
 
+from data_aggregation.data_aggregation import COMPOSITION_TOTALS, rebuild_statements
 from db.bq import insert_from_staging_sql, run_query, staged, table_ref, with_retry
 from riot_api.constants import TFT_RANKED_QUEUE_ID
 
@@ -604,7 +605,18 @@ def write_compositions(
     variants: list[dict] | None = None,
 ) -> None:
     """Replace the patch's comps, their variants and the board assignments in one
-    transaction, so a rerun (or a crash part-way) never leaves them out of step."""
+    transaction, so a rerun (or a crash part-way) never leaves them out of step.
+
+    The same transaction rebuilds the patch's composition_* totals from the new
+    assignments, reading only the days the assigned boards were played on.
+    """
+    params = [bigquery.ScalarQueryParameter("patch", "STRING", patch)]
+    if assignments:
+        played = [datetime.fromisoformat(str(a["played_at"])) for a in assignments]
+        params += [
+            bigquery.ScalarQueryParameter("lo", "TIMESTAMP", min(played)),
+            bigquery.ScalarQueryParameter("hi", "TIMESTAMP", max(played)),
+        ]
     rows = {
         "compositions": compositions,
         "composition_variants": variants or [],
@@ -618,10 +630,15 @@ def write_compositions(
             )
             if name in staging:
                 statements.append(insert_from_staging_sql(client, name, staging[name]))
+        if assignments:
+            statements.extend(rebuild_statements(client, COMPOSITION_TOTALS, patch=True))
+        else:
+            statements.extend(
+                f"DELETE FROM `{table_ref(client, name)}` WHERE patch = @patch;"
+                for name in COMPOSITION_TOTALS
+            )
         script = "\n".join(["BEGIN TRANSACTION;", *statements, "COMMIT TRANSACTION;"])
-        run_query(
-            client, script, [bigquery.ScalarQueryParameter("patch", "STRING", patch)]
-        )
+        run_query(client, script, params)
 
 
 def cluster_patch(
