@@ -1,0 +1,42 @@
+-- Each unit on a comp's boards, per patch: the comp's boards that had it (any star level)
+-- against the comp's other boards (_without). A unit counts once per board, at its best copy.
+--   delta: average_placement - the average placement of all the comp's boards
+-- (including these), so a negative delta is how many places having the unit is worth within the comp
+--   is_core: the unit is one of the comp's listed units (compositions.units)
+WITH units AS (
+  SELECT
+    patch, comp_id, champion,
+    SUM(boards) AS boards,
+    SUM(placement_sum) AS placement_sum,
+    SUM(top4_count) AS top4_count,
+    SUM(win_count) AS win_count,
+    SAFE_DIVIDE(SUM(star * boards), SUM(boards)) AS avg_star,
+    MAX(updated_at) AS updated_at
+  FROM `${project}.${dataset}.composition_star_totals`
+  GROUP BY patch, comp_id, champion
+)
+SELECT
+  u.patch,
+  u.comp_id,
+  c.label AS comp_label,
+  c.category AS comp_category,
+  u.champion,
+  COALESCE(ch.name, u.champion) AS champion_name,
+  ch.cost,
+  u.champion IN UNNEST(c.carries) AS is_carry,
+  u.champion IN (SELECT api_name FROM UNNEST(c.units)) AS is_core,
+  u.avg_star,
+  u.boards AS games,
+  SAFE_DIVIDE(u.boards, c.boards) AS share_of_comp,
+  SAFE_DIVIDE(u.win_count, u.boards) AS win_rate,
+  SAFE_DIVIDE(u.top4_count, u.boards) AS top4_rate,
+  SAFE_DIVIDE(u.placement_sum, u.boards) AS average_placement,
+  c.boards - u.boards AS games_without,
+  SAFE_DIVIDE(c.win_count - u.win_count, c.boards - u.boards) AS win_rate_without,
+  SAFE_DIVIDE(c.top4_count - u.top4_count, c.boards - u.boards) AS top4_rate_without,
+  SAFE_DIVIDE(c.placement_sum - u.placement_sum, c.boards - u.boards) AS average_placement_without,
+  SAFE_DIVIDE(u.placement_sum, u.boards) - SAFE_DIVIDE(c.placement_sum, c.boards) AS delta,
+  u.updated_at
+FROM units AS u
+JOIN `${project}.${dataset}.compositions` AS c USING (patch, comp_id)
+LEFT JOIN `${project}.${dataset}.champions` AS ch ON ch.api_name = u.champion

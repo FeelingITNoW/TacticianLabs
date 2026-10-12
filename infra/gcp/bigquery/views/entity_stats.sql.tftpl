@@ -1,6 +1,9 @@
 -- Rates for one entity per patch, derived from exact integer counters.
 --   play_rate: boards per match that had the entity, so 1 <= x <= 8
 --   frequency: boards per match in the whole patch, so 0 <= x <= 8
+--   *_without: the patch's boards that did not have the entity (all boards minus its boards)
+--   delta: average_placement - the average placement of all the patch's boards
+-- (including these), so a negative delta is how many places having the entity is worth
 SELECT
   c.patch,
   c.api_name,
@@ -11,6 +14,11 @@ SELECT
   SAFE_DIVIDE(c.boards, c.matches) AS play_rate,
   SAFE_DIVIDE(c.boards, p.matches) AS frequency,
   c.matches,
+  p.boards - c.boards AS games_without,
+  SAFE_DIVIDE(p.win_count - c.win_count, p.boards - c.boards) AS win_rate_without,
+  SAFE_DIVIDE(p.top4_count - c.top4_count, p.boards - c.boards) AS top4_rate_without,
+  SAFE_DIVIDE(p.placement_sum - c.placement_sum, p.boards - c.boards) AS average_placement_without,
+  SAFE_DIVIDE(c.placement_sum, c.boards) - SAFE_DIVIDE(p.placement_sum, p.boards) AS delta,
   c.updated_at
 FROM `${project}.${dataset}.${totals}` AS c
 JOIN `${project}.${dataset}.patch_totals` AS p USING (patch)

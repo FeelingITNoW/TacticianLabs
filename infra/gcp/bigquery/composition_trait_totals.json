@@ -1,0 +1,12 @@
+[
+  {"name": "patch", "type": "STRING", "mode": "REQUIRED", "description": "matches.game_version"},
+  {"name": "comp_id", "type": "STRING", "mode": "REQUIRED", "description": "compositions.comp_id for the same patch"},
+  {"name": "trait", "type": "STRING", "mode": "REQUIRED", "description": "An active trait on the comp's boards (traits.api_name)"},
+  {"name": "tier", "type": "INT64", "mode": "REQUIRED", "description": "Its active tier on the board (participant_traits.tier_current, at least 1)"},
+  {"name": "boards", "type": "INT64", "mode": "REQUIRED", "description": "Boards (one player in one match) that had it; summed over the patch"},
+  {"name": "matches", "type": "INT64", "mode": "REQUIRED", "description": "Distinct matches where at least one board had it"},
+  {"name": "placement_sum", "type": "INT64", "mode": "REQUIRED", "description": "Sum of those boards' placements (1-8)"},
+  {"name": "top4_count", "type": "INT64", "mode": "REQUIRED", "description": "Boards that placed 1-4"},
+  {"name": "win_count", "type": "INT64", "mode": "REQUIRED", "description": "Boards that placed 1st"},
+  {"name": "updated_at", "type": "TIMESTAMP"}
+]

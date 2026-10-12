@@ -1,5 +1,8 @@
 -- Same rates as entity_stats, per champion + item combo. share_of_champion_games
 -- is the fraction of the champion's boards that held the item (for best-in-slot lookups).
+-- *_without are the champion's other boards (it was played, but with no copy holding the item);
+-- delta = average_placement - the champion's average placement over all its boards (including
+-- these), so a negative delta is how many places the item is worth on that champion.
 SELECT
   c.patch,
   c.champion,
@@ -12,6 +15,11 @@ SELECT
   SAFE_DIVIDE(c.boards, p.matches) AS frequency,
   SAFE_DIVIDE(c.boards, ch.boards) AS share_of_champion_games,
   c.matches,
+  ch.boards - c.boards AS games_without,
+  SAFE_DIVIDE(ch.win_count - c.win_count, ch.boards - c.boards) AS win_rate_without,
+  SAFE_DIVIDE(ch.top4_count - c.top4_count, ch.boards - c.boards) AS top4_rate_without,
+  SAFE_DIVIDE(ch.placement_sum - c.placement_sum, ch.boards - c.boards) AS average_placement_without,
+  SAFE_DIVIDE(c.placement_sum, c.boards) - SAFE_DIVIDE(ch.placement_sum, ch.boards) AS delta,
   c.updated_at
 FROM `${project}.${dataset}.champion_item_totals` AS c
 JOIN `${project}.${dataset}.patch_totals` AS p USING (patch)
