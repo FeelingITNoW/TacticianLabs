@@ -30,14 +30,8 @@ README.md
 **/.terraform
 tfplan
 
-# Not needed to build the web image
+# Local build output and environments, never needed in an image
 **/dist
 .venv
 .venv-1
-.github
-infra
-dags
-tests
-logs
-files
 **/__pycache__
