@@ -123,3 +123,23 @@ def test_allows_a_query_whose_dry_run_lists_the_views_base_tables():
 
     assert rows == [{"n": 1}]
     assert client.ran == ["SELECT 1"]
+
+
+def test_history_goes_before_the_question_and_is_trimmed():
+    history = [
+        {"role": "user" if i % 2 == 0 else "model", "text": f"t{i}"} for i in range(10)
+    ]
+
+    contents = nl_to_sql.build_contents("and on Sivir?", history)
+
+    assert [c.parts[0].text for c in contents] == [
+        "t4", "t5", "t6", "t7", "t8", "t9", "and on Sivir?"
+    ]
+    assert contents[-1].role == "user"
+    assert [c.role for c in contents[:2]] == ["user", "model"]
+
+
+def test_no_history_is_just_the_question():
+    contents = nl_to_sql.build_contents("hi", None)
+
+    assert len(contents) == 1 and contents[0].parts[0].text == "hi"

@@ -133,3 +133,15 @@ export interface LeaderboardPage {
   pageSize: number
   regions: LeaderboardRegion[]
 }
+
+/** One turn of the /ask chat, as the agent service takes it. */
+export interface AgentTurn {
+  role: 'user' | 'model'
+  text: string
+}
+
+export interface AgentAnswer {
+  text: string
+  /** The SQL the agent ran, in order */
+  queries: string[]
+}

@@ -11,6 +11,8 @@ services:
       - CHOKIDAR_USEPOLLING=true
       # The pages read BigQuery with your gcloud Application Default Credentials (mounted below)
       - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-}
+      # The /ask page calls the SQL agent service below
+      - AGENT_URL=http://agent:8001
     volumes:
       - .:/app
       - /app/node_modules
@@ -18,3 +20,22 @@ services:
     command: npm run dev -- --host 0.0.0.0 --port 3000
     stdin_open: true
     tty: true
+
+  # The SQL agent behind the /ask page (include/insights/server.py)
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    container_name: tftdataanalyzer-agent
+    ports:
+      - "8001:8001"
+    environment:
+      - PYTHONPATH=include
+      - AGENT_HOST=0.0.0.0
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_SQL_MODEL=${GEMINI_SQL_MODEL:-}
+    volumes:
+      - .:/app
+      - ${HOME}/.config/gcloud:/root/.config/gcloud:ro
+    command: python -m insights.server

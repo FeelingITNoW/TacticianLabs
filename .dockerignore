@@ -29,3 +29,9 @@ README.md
 **/*.tfstate.backup
 **/.terraform
 tfplan
+
+# Local build output and environments, never needed in an image
+**/dist
+.venv
+.venv-1
+**/__pycache__
