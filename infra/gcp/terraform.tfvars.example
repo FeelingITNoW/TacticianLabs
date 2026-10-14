@@ -6,5 +6,5 @@ region       = "us-central1"
 #         --connection=<connection-name> --location=<connection-region> --format='value(name)'
 # The connection's region can differ from `region` above (Cloud Run/Artifact
 # Registry/Scheduler's region) — if so, also set developer_connect_region.
-git_repository_link      = "projects/my-gcp-project/locations/us-central1/connections/github/gitRepositoryLinks/FeelingITNoW-clone.tools"
+git_repository_link      = "projects/my-gcp-project/locations/us-central1/connections/github/gitRepositoryLinks/FeelingITNoW-tactician-labs"
 # developer_connect_region = "northamerica-northeast2"

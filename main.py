@@ -1,5 +1,5 @@
 def main():
-    print("Hello from clone-tools!")
+    print("Hello from tactician-labs!")
 
 
 if __name__ == "__main__":

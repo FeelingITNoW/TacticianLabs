@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 export const Route = createFileRoute('/ask')({
   loader: () => getReferenceListsFn(),
-  head: () => ({ meta: [{ title: 'Ask · TFT Data Analyzer' }] }),
+  head: () => ({ meta: [{ title: 'Ask · Tactician Labs' }] }),
   component: AskPage,
 })
 

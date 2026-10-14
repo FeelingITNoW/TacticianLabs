@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build the Astro runtime image
-        run: docker build -t clone-tools-ci .
+        run: docker build -t tactician-labs-ci .
 
       # BigQuery is faked (tests/conftest.py FakeBigQuery); tests that need the
       # real thing are marked integration and skipped here.
@@ -20,7 +20,7 @@ jobs:
         run: |
           docker run --rm \
             -e GEMINI_API_KEY=ci-dummy -e RIOT_API_KEY=ci-dummy \
-            clone-tools-ci python -m pytest tests -v -m "not integration"
+            tactician-labs-ci python -m pytest tests -v -m "not integration"
 
   astro-pytest:
     runs-on: ubuntu-latest

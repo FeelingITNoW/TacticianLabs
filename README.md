@@ -1,6 +1,6 @@
-# clone.tools
+# Tactician Labs
 
-A Teamfight Tactics (TFT) analytics pipeline and web app, heading toward a [tactics.tools](https://tactics.tools) clone. It crawls high-elo ranked matches from the Riot API, stores them in BigQuery, derives per-patch stats and automatically discovered team compositions, and serves them through a TanStack Start frontend. A Gemini-backed agent can also answer stats questions in plain English by writing SQL over the stats views.
+A Teamfight Tactics (TFT) analytics platform: a data pipeline and web app, inspired by [tactics.tools](https://tactics.tools). It crawls high-elo ranked matches from the Riot API, stores them in BigQuery, derives per-patch stats and automatically discovered team compositions, and serves them through a TanStack Start frontend. A Gemini-backed agent can also answer stats questions in plain English by writing SQL over the stats views.
 
 ## What it does
 
@@ -174,3 +174,7 @@ Tables and views are defined in `infra/gcp/bigquery.tf`, with column layouts in 
 ## Status
 
 Work in progress. The ingest, stats, clustering and text-to-SQL pieces work end to end; the `/explorer` page is a skeleton, and the text-to-SQL agent does not yet handle every multi-step question.
+
+## Legal
+
+Tactician Labs isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games, and all associated properties are trademarks or registered trademarks of Riot Games, Inc.

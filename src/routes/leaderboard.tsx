@@ -41,7 +41,7 @@ export const Route = createFileRoute('/leaderboard')({
         page: deps.page,
       },
     }),
-  head: () => ({ meta: [{ title: 'Leaderboard · TFT Data Analyzer' }] }),
+  head: () => ({ meta: [{ title: 'Leaderboard · Tactician Labs' }] }),
   component: LeaderboardPage,
 })
 

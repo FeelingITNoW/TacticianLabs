@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.node
-    container_name: tftdataanalyzer-dev
+    container_name: tactician-labs-dev
     ports:
       - "3000:3000"
     environment:
@@ -26,7 +26,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.node
-    container_name: tftdataanalyzer-agent
+    container_name: tactician-labs-agent
     ports:
       - "8001:8001"
     environment:

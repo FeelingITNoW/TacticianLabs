@@ -17,7 +17,7 @@ The match archive lives in `google_storage_bucket.tft_match_data` here; the job 
 
 1. **Link the repo in Developer Connect.** This needs a GitHub OAuth step, which Terraform can't do. Use the plain **Developer Connect → Connections** console page, not Cloud Run's "Continuously deploy from a repository" wizard — that one also spins up its own Cloud Run *service* as a side effect, which isn't part of this setup and is just a stray resource to delete afterwards (`gcloud run services delete <name> --region=<region>`).
 
-   Console → Developer Connect → *Connections* → **Create**, choose GitHub, pick a region — it does **not** need to match `var.region` — and install the GitHub app on `FeelingITNoW/clone.tools`. Then **Link repository**. Find the connection and copy the repository link's full resource name for `git_repository_link`:
+   Console → Developer Connect → *Connections* → **Create**, choose GitHub, pick a region — it does **not** need to match `var.region` — and install the GitHub app on `FeelingITNoW/tactician-labs`. Then **Link repository**. Find the connection and copy the repository link's full resource name for `git_repository_link`:
    ```sh
    gcloud developer-connect connections list --location=<connection-region>
    gcloud developer-connect connections git-repository-links list \
