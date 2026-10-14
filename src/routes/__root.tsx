@@ -24,7 +24,7 @@ export const Route = createRootRoute({
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'TFT Data Analyzer',
+        title: 'Tactician Labs',
       },
     ],
     links: [
@@ -56,6 +56,11 @@ function Shell() {
       <main className="mx-auto max-w-6xl px-4 py-8">
         <Outlet />
       </main>
+      <footer className="mx-auto max-w-6xl px-4 pb-8 text-xs text-muted-foreground">
+        Tactician Labs isn&apos;t endorsed by Riot Games and doesn&apos;t reflect the views or opinions of Riot
+        Games or anyone officially involved in producing or managing Riot Games properties. Riot Games, and all
+        associated properties are trademarks or registered trademarks of Riot Games, Inc.
+      </footer>
     </>
   )
 }

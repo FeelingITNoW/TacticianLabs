@@ -14,7 +14,7 @@ export const Route = createFileRoute('/explorer')({
   validateSearch: explorerQuerySchema,
   search: { middlewares: [stripSearchParams(EMPTY_QUERY)] },
   loader: () => getReferenceListsFn(),
-  head: () => ({ meta: [{ title: 'Explorer · TFT Data Analyzer' }] }),
+  head: () => ({ meta: [{ title: 'Explorer · Tactician Labs' }] }),
   component: ExplorerPage,
 })
 

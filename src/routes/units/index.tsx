@@ -26,7 +26,7 @@ export const Route = createFileRoute('/units/')({
   validateSearch: searchSchema,
   search: { middlewares: [stripSearchParams(defaults)] },
   loader: () => getUnitsFn(),
-  head: () => ({ meta: [{ title: 'Units · TFT Data Analyzer' }] }),
+  head: () => ({ meta: [{ title: 'Units · Tactician Labs' }] }),
   component: UnitsPage,
 })
 

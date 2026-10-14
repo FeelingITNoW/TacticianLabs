@@ -40,7 +40,7 @@ export const Route = createFileRoute('/units/$unitId')({
     return { itemization, trios }
   },
   head: ({ loaderData }) => ({
-    meta: [{ title: `${loaderData?.itemization.unit.name ?? 'Unit'} · TFT Data Analyzer` }],
+    meta: [{ title: `${loaderData?.itemization.unit.name ?? 'Unit'} · Tactician Labs` }],
   }),
   notFoundComponent: () => (
     <NotFoundState

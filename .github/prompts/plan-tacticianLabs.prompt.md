@@ -1,4 +1,4 @@
-# Plan: tactics.tools Clone with RAG & Analytics
+# Plan: Tactician Labs (RAG & Analytics)
 
 ## Decisions
 - Google AI Studio (Gemini API key) for embeddings (`text-embedding-004`, 768 dims)

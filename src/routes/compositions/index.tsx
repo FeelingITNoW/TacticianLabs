@@ -21,7 +21,7 @@ export const Route = createFileRoute('/compositions/')({
   validateSearch: searchSchema,
   search: { middlewares: [stripSearchParams(defaults)] },
   loader: () => getCompsFn(),
-  head: () => ({ meta: [{ title: 'Compositions · TFT Data Analyzer' }] }),
+  head: () => ({ meta: [{ title: 'Compositions · Tactician Labs' }] }),
   component: CompositionsPage,
 })
 

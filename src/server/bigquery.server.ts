@@ -76,7 +76,7 @@ export async function runQuery<T>(
       types,
       location: LOCATION,
       maximumBytesBilled: String(maxBytes),
-      labels: { app: 'clone-tools-web', fn: labelValue(fn) },
+      labels: { app: 'tactician-labs-web', fn: labelValue(fn) },
     })
     return rows as T[]
   } catch (error) {

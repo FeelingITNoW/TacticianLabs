@@ -15,7 +15,7 @@ export const Route = createFileRoute('/compositions/$compId')({
     if (!comp) throw notFound()
     return comp
   },
-  head: ({ loaderData }) => ({ meta: [{ title: `${loaderData?.label ?? 'Composition'} · TFT Data Analyzer` }] }),
+  head: ({ loaderData }) => ({ meta: [{ title: `${loaderData?.label ?? 'Composition'} · Tactician Labs` }] }),
   notFoundComponent: () => (
     <NotFoundState
       title="Composition not found"

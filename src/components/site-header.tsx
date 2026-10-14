@@ -16,7 +16,7 @@ export function SiteHeader({ meta }: { meta: Meta | null }) {
     <header className="border-b bg-card/60 backdrop-blur">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-8 gap-y-2 px-4 py-3">
         <Link to="/" className="text-lg font-semibold tracking-tight">
-          TFT Data
+          Tactician Labs
         </Link>
         <nav className="flex flex-wrap gap-1 text-sm">
           {NAV.map((item) => (
