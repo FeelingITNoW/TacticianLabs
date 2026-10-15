@@ -517,3 +517,52 @@ class TestIngestRoutingGroup:
 
         assert failures == 0
         mocks["write_matches"].assert_called_once()
+
+
+class TestIngestWriteBatching:
+    IDS = [f"NA1_{n}" for n in range(5)]
+
+    async def run(self, write_matches):
+        mocks = {
+            "upsert_high_elo_players": AsyncMock(),
+            "collect_match_ids": AsyncMock(
+                return_value=({i: ["MASTER"] for i in self.IDS}, "AMERICAS")
+            ),
+            "collect_matches": AsyncMock(
+                side_effect=lambda client, ids, routing: {i: body(i, RANKED) for i in ids}
+            ),
+            "upload_matches": AsyncMock(),
+            "write_matches": write_matches,
+            "write_rejected_matches": MagicMock(),
+        }
+        with (
+            patch.multiple(ingest_matches, **mocks),
+            patch.object(ingest_matches, "FETCH_CHUNK_SIZE", 1),
+            patch.object(ingest_matches, "WRITE_BATCH_SIZE", 2),
+        ):
+            failures = await ingest_matches.ingest_routing_group(
+                MagicMock(), MagicMock(), None, None, "AMERICAS", ["NA1"], "16.19.1", None
+            )
+        return failures, mocks
+
+    async def test_fetched_chunks_are_written_together_and_the_rest_at_the_end(self):
+        written = []
+        write = MagicMock(
+            side_effect=lambda c, bodies, *a: written.append(sorted(bodies)) or (len(bodies), 0)
+        )
+
+        failures, mocks = await self.run(write)
+
+        assert mocks["collect_matches"].await_count == 5
+        assert written == [self.IDS[0:2], self.IDS[2:4], self.IDS[4:5]]
+        assert failures == 0
+
+    async def test_a_failed_write_counts_its_matches_and_the_next_batch_still_runs(self):
+        write = MagicMock(
+            side_effect=[RuntimeError("BigQuery down"), (2, 0), (1, 0)]
+        )
+
+        failures, _ = await self.run(write)
+
+        assert write.call_count == 3
+        assert failures == 2

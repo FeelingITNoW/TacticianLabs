@@ -69,7 +69,7 @@ and Docker runs (`docker run ... tft-ingest`) will pick them up from `~/.config/
 
 `bigquery.tf` creates the `tft` dataset, a `tft_staging` dataset whose tables expire after a day, and one table per file in `bigquery/`. Primary and foreign keys are recorded `NOT ENFORCED`. The provider only takes single-column foreign keys, so composite ones are noted in the table descriptions. Tables have `deletion_protection` on (the provider default), so a change that forces replacement fails at apply instead of dropping data.
 
-The job writes with free load jobs into `tft_staging`, then one SQL script per 50-match chunk. That script's deletes are bounded by `played_at` partitions and clustered on `match_id`, so it scans little. The same script also MERGEs the chunk into the per-patch `*_totals` counter tables, reading only the staged rows and the rows being replaced. Both stay well inside the 1 TB/month free query tier at current volumes.
+The job writes with free load jobs into `tft_staging`, then one SQL script per batch of up to 500 matches (`WRITE_BATCH_SIZE`; it fetches from Riot 50 at a time). That script's deletes are bounded by `played_at` partitions and clustered on `match_id`, so it scans little. The same script also MERGEs the chunk into the per-patch `*_totals` counter tables, reading only the staged rows and the rows being replaced. Both stay well inside the 1 TB/month free query tier at current volumes.
 
 ### Stats tables and views
 

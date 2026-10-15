@@ -16,8 +16,9 @@ from riot_api.constants import (
 )
 from riot_api.http_client import get_latest_version
 
-# Matches per BigQuery write: one staging round and one SQL script each
-WRITE_CHUNK_SIZE = 50
+# Matches per BigQuery write: one staging round and one SQL script each. The script's
+# *_totals MERGEs cost about the same however many matches it holds, so write few, big ones
+WRITE_CHUNK_SIZE = 500
 
 
 def _bigquery_client():

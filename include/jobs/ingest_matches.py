@@ -42,7 +42,12 @@ from riot_api.constants import (
 from riot_api.http_client import get_latest_version
 from riot_api.match_api import collect_match_ids, collect_matches
 
-CHUNK_SIZE = 50
+# Matches per Riot fetch round (also the unit of GCS upload and rejected-match caching)
+FETCH_CHUNK_SIZE = 50
+# Matches per BigQuery write. Each write MERGEs into every *_totals table, and those
+# MERGEs read whole played_at partitions of the match tables to subtract replaced rows,
+# so their cost grows with the number of writes, not with the matches in each one
+WRITE_BATCH_SIZE = 500
 DEFAULT_GCS_BUCKET = "tft-match-data"
 
 
@@ -111,8 +116,27 @@ async def ingest_routing_group(
 
     ingested = rejected_count = 0
     bucket = os.getenv("GCS_BUCKET", DEFAULT_GCS_BUCKET)
-    for start in range(0, len(new_match_ids), CHUNK_SIZE):
-        chunk = new_match_ids[start : start + CHUNK_SIZE]
+    pending: dict[str, dict] = {}
+
+    def flush() -> None:
+        nonlocal ingested, failures
+        if not pending:
+            return
+        try:
+            written, failed = write_matches(
+                db_client, dict(pending), latest_version, genai_client, INGEST_QUEUES
+            )
+        except Exception as exc:
+            # Not stored, so the next run finds and fetches these matches again
+            failures += len(pending)
+            print(f"[{routing}] writing batch of {len(pending)} matches failed: {exc!r}")
+        else:
+            ingested += written
+            failures += failed
+        pending.clear()
+
+    for start in range(0, len(new_match_ids), FETCH_CHUNK_SIZE):
+        chunk = new_match_ids[start : start + FETCH_CHUNK_SIZE]
         try:
             matches = await collect_matches(http_client, chunk, routing)
         except Exception as exc:
@@ -131,16 +155,10 @@ async def ingest_routing_group(
         if storage_client is not None:
             await upload_matches(matches, storage_client, bucket, latest_version)
 
-        try:
-            written, failed = write_matches(
-                db_client, matches, latest_version, genai_client, INGEST_QUEUES
-            )
-        except Exception as exc:
-            failures += len(matches)
-            print(f"[{routing}] writing chunk of {len(matches)} matches failed: {exc!r}")
-            continue
-        ingested += written
-        failures += failed
+        pending.update(matches)
+        if len(pending) >= WRITE_BATCH_SIZE:
+            flush()
+    flush()
 
     print(
         f"[{routing}] ingested {ingested} matches, rejected {rejected_count}, "
