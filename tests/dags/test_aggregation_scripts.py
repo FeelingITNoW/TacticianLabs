@@ -164,6 +164,15 @@ class TestMerge:
         for name, sql in zip(INGEST_TOTALS, merges):
             assert f"MERGE `test-project.tft.{name}`" in sql
 
+    def test_adding_only_never_reads_the_replaced_rows(self, fake_bq):
+        merges = merge_totals_sql(fake_bq, STAGING, replacing=False)
+
+        assert len(merges) == len(INGEST_TOTALS)
+        for sql in merges:
+            assert "UNION ALL" not in sql
+            assert "@match_ids" not in sql
+            assert "test-project.tft.matches" not in sql
+
     def test_ingest_writes_never_touch_the_comp_totals(self, fake_bq):
         # Ingest doesn't know the comps; the clustering job rebuilds these
         merges = "\n".join(merge_totals_sql(fake_bq, STAGING))

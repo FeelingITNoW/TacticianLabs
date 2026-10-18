@@ -162,8 +162,9 @@ def write_match_rows(
 
     Idempotent, since the daily look-back windows overlap and a failed run is
     retried. The whole script is one transaction, so the totals can't be bumped
-    without the matches landing (which would double count on the retry). The
-    totals come first because they subtract the rows the deletes then remove.
+    without the matches landing (which would double count on the retry). When any
+    match was stored before, the totals subtract its old rows before the deletes
+    remove them; when none was, the totals only add and nothing is deleted.
     The matches row is deleted first and inserted last among the writes.
     """
     if not batches:
@@ -185,9 +186,25 @@ def write_match_rows(
         )
 
     with staged(client, rows) as staging:
-        statements = [*merge_totals_sql(client, staging), delete_sql("matches")]
+        # Matches already stored have rows to subtract from the totals and to delete;
+        # new ones (the usual case) have none, so those scans are skipped. The check
+        # runs inside the transaction, so a retried commit takes the replacing branch.
+        replaced = [
+            *merge_totals_sql(client, staging),
+            delete_sql("matches"),
+            *(delete_sql(name) for name in MATCH_CHILD_TABLES),
+        ]
+        statements = [
+            "SET replacing = EXISTS(SELECT 1 FROM "
+            f"`{table_ref(client, 'matches')}` "
+            "WHERE match_id IN UNNEST(@match_ids) AND played_at BETWEEN @lo AND @hi);",
+            "IF replacing THEN",
+            *replaced,
+            "ELSE",
+            *merge_totals_sql(client, staging, replacing=False),
+            "END IF;",
+        ]
         for name in MATCH_CHILD_TABLES:
-            statements.append(delete_sql(name))
             if name == "participants" and name in staging:
                 # With completed_items and board_cost, from the staged units and items
                 statements.append(insert_participants_sql(client, staging))
@@ -199,7 +216,14 @@ def write_match_rows(
                 statements.append(insert_sql(client, name, staging[name]))
         statements.append(merge_players_sql(client, staging["players"]))
         statements.append(insert_from_staging_sql(client, "matches", staging["matches"]))
-        script = "\n".join(["BEGIN TRANSACTION;", *statements, "COMMIT TRANSACTION;"])
+        script = "\n".join(
+            [
+                "DECLARE replacing BOOL DEFAULT FALSE;",
+                "BEGIN TRANSACTION;",
+                *statements,
+                "COMMIT TRANSACTION;",
+            ]
+        )
         run_query(client, script, params)
 
 

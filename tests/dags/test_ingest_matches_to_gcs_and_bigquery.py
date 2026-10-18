@@ -524,8 +524,27 @@ class TestWriteMatches:
 
         (sql, _), = fake_bq.queries
         statements = [s.strip() for s in sql.split(";") if s.strip()]
-        assert statements[0] == "BEGIN TRANSACTION"
+        assert statements[0] == "DECLARE replacing BOOL DEFAULT FALSE"
+        assert statements[1] == "BEGIN TRANSACTION"
         assert statements[-1] == "COMMIT TRANSACTION"
+
+    def test_replaced_rows_are_only_read_when_a_match_was_stored_before(self, fake_bq):
+        from data_aggregation.data_aggregation import INGEST_TOTALS
+
+        _write(fake_bq, {"m": json.dumps(make_match_data_ranked_game())})
+
+        (sql, _), = fake_bq.queries
+        check = sql[sql.index("SET replacing"):].split(";")[0]
+        assert "FROM `test-project.tft.matches`" in check
+        assert "match_id IN UNNEST(@match_ids) AND played_at BETWEEN @lo AND @hi" in check
+        replacing = sql[sql.index("IF replacing THEN"):sql.index("ELSE")]
+        adding = sql[sql.index("ELSE"):sql.index("END IF")]
+        assert "DELETE FROM" in replacing and "played_at BETWEEN" in replacing
+        for table in INGEST_TOTALS:
+            assert f"MERGE `test-project.tft.{table}`" in replacing
+            assert f"MERGE `test-project.tft.{table}`" in adding
+        assert "DELETE FROM" not in adding
+        assert "BETWEEN @lo" not in adding and "@match_ids" not in adding
 
     def test_totals_are_updated_before_the_rows_they_read_are_deleted(self, fake_bq):
         from data_aggregation.data_aggregation import INGEST_TOTALS
@@ -535,6 +554,7 @@ class TestWriteMatches:
         (sql, _), = fake_bq.queries
         first_delete = sql.index("DELETE FROM")
         for table in INGEST_TOTALS:
+            # the replacing branch's MERGE (the first one) comes before the deletes
             assert 0 < sql.index(f"MERGE `test-project.tft.{table}`") < first_delete
 
     def test_deletes_are_bounded_by_match_ids_and_dates(self, fake_bq):

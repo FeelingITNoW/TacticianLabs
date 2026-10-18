@@ -250,11 +250,15 @@ GROUP BY b.patch, {keys}
 """
 
 
-def merge_sql(client: bigquery.Client, name: str, new: Resolver, old: Resolver) -> str:
+def merge_sql(
+    client: bigquery.Client, name: str, new: Resolver, old: Resolver | None
+) -> str:
     """Add the new rows' counts to `name` and subtract the rows they replace.
 
     Subtracting the old rows keeps a reload (or an overlapping re-ingest) from
     counting a match twice, and moves a match to its new patch if that changed.
+    With `old` None nothing is replaced, so only the new rows are counted and the
+    match tables are never read.
     """
     spec = TOTALS[name]
     keys = ["patch", *spec.keys]
@@ -270,6 +274,9 @@ def merge_sql(client: bigquery.Client, name: str, new: Resolver, old: Resolver) 
         f"{c} = GREATEST(t.{c}, s.{c})" if c in spec.maxima else f"{c} = t.{c} + s.{c}"
         for c in counters
     )
+    subtract = (
+        f"\n    UNION ALL\n    ({counts_sql(name, old, sign=-1)})" if old else ""
+    )
     columns = ", ".join([*keys, *counters, "updated_at"])
     values = ", ".join([*(f"s.{c}" for c in [*keys, *counters]), "CURRENT_TIMESTAMP()"])
     return f"""
@@ -277,9 +284,7 @@ MERGE `{table_ref(client, name)}` AS t
 USING (
   SELECT {", ".join(keys)}, {summed}
   FROM (
-    ({counts_sql(name, new)})
-    UNION ALL
-    ({counts_sql(name, old, sign=-1)})
+    ({counts_sql(name, new)}){subtract}
   )
   GROUP BY {", ".join(keys)}
   HAVING {changed}
@@ -291,14 +296,19 @@ WHEN NOT MATCHED AND s.boards > 0 THEN INSERT ({columns}) VALUES ({values});
 """
 
 
-def merge_totals_sql(client: bigquery.Client, staging: dict[str, str]) -> list[str]:
+def merge_totals_sql(
+    client: bigquery.Client, staging: dict[str, str], replacing: bool = True
+) -> list[str]:
     """Statements that fold one write's matches into every totals table but the clustered ones.
+
+    With `replacing` False none of the matches was stored before, so they only add
+    the staged rows' counts and skip the scan for rows to subtract.
 
     They must run before the write's deletes (they read the rows being replaced)
     and inside the same transaction, so counters and matches commit together.
     """
     new = new_resolver(client, staging)
-    old = old_resolver(client)
+    old = old_resolver(client) if replacing else None
     return [merge_sql(client, name, new, old) for name in INGEST_TOTALS]
 
 

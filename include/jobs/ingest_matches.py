@@ -44,9 +44,10 @@ from riot_api.match_api import collect_match_ids, collect_matches
 
 # Matches per Riot fetch round (also the unit of GCS upload and rejected-match caching)
 FETCH_CHUNK_SIZE = 50
-# Matches per BigQuery write. Each write MERGEs into every *_totals table, and those
-# MERGEs read whole played_at partitions of the match tables to subtract replaced rows,
-# so their cost grows with the number of writes, not with the matches in each one
+# Matches per BigQuery write. Each write MERGEs into every *_totals table; if any of its
+# matches was stored before, those MERGEs read whole played_at partitions of the match
+# tables to subtract the replaced rows, so their cost grows with the number of writes,
+# not with the matches in each one
 WRITE_BATCH_SIZE = 500
 DEFAULT_GCS_BUCKET = "tft-match-data"
 
