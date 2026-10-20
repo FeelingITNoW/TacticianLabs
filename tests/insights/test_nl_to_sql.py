@@ -4,6 +4,7 @@ from datetime import date
 from types import SimpleNamespace
 
 import pytest
+from google.genai import types
 from google.api_core import exceptions
 
 from insights import nl_to_sql, prompt
@@ -143,3 +144,97 @@ def test_no_history_is_just_the_question():
     contents = nl_to_sql.build_contents("hi", None)
 
     assert len(contents) == 1 and contents[0].parts[0].text == "hi"
+
+
+def usage(prompt, output, total):
+    return SimpleNamespace(
+        prompt_token_count=prompt,
+        candidates_token_count=output,
+        thoughts_token_count=None,
+        cached_content_token_count=None,
+        total_token_count=total,
+    )
+
+
+class FakeGenai:
+    """A genai client whose models.generate_content returns `responses` in turn."""
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.requests = []
+        self.models = SimpleNamespace(generate_content=self.generate_content)
+
+    def generate_content(self, model, contents, config):
+        self.requests.append(len(contents))
+        return self.responses.pop(0)
+
+
+def tool_call(query="SELECT 1"):
+    call = SimpleNamespace(name="sql", args={"query": query})
+    content = types.Content(role="model", parts=[types.Part(text="calling")])
+    return SimpleNamespace(
+        function_calls=[call],
+        text=None,
+        candidates=[SimpleNamespace(content=content)],
+        usage_metadata=usage(100, 5, 105),
+    )
+
+
+def final(text="done", prompt=150, output=20):
+    return SimpleNamespace(
+        function_calls=None,
+        text=text,
+        candidates=[],
+        usage_metadata=usage(prompt, output, prompt + output),
+    )
+
+
+@pytest.fixture
+def agent_env(monkeypatch):
+    monkeypatch.setenv("GEMINI_SQL_MODEL", "gemini-test")
+    monkeypatch.setattr(nl_to_sql, "build_context", lambda client: "system prompt")
+
+
+def test_ask_adds_up_every_model_call(agent_env):
+    client = FakeClient(rows=[{"n": 1}])
+    genai_client = FakeGenai([tool_call(), final()])
+
+    answer = nl_to_sql.ask("how many?", client=client, genai_client=genai_client)
+
+    assert answer.text == "done"
+    assert answer.queries == ["SELECT 1"]
+    assert [c.total_tokens for c in answer.model_calls] == [105, 170]
+    assert [c.prompt_tokens for c in answer.model_calls] == [100, 150]
+    assert [r.rows for r in answer.sql_runs] == [1]
+    assert answer.model == "gemini-test"
+    assert len(answer.prompt_sha256) == 64
+    # The second request carries the question, the model's call and the tool result
+    assert genai_client.requests == [1, 3]
+
+
+def test_ask_stops_when_the_model_never_finishes(agent_env):
+    genai_client = FakeGenai([tool_call() for _ in range(nl_to_sql.MAX_TOOL_CALLS)])
+
+    answer = nl_to_sql.ask("q", client=FakeClient(), genai_client=genai_client)
+
+    assert answer.text.startswith("No answer")
+    assert len(answer.model_calls) == nl_to_sql.MAX_TOOL_CALLS
+
+
+def test_a_failed_ask_keeps_what_it_used(agent_env):
+    genai_client = FakeGenai([tool_call()])  # the second call finds nothing to pop
+
+    with pytest.raises(IndexError) as raised:
+        nl_to_sql.ask("q", client=FakeClient(), genai_client=genai_client)
+
+    assert [c.total_tokens for c in raised.value.answer.model_calls] == [105]
+
+
+def test_run_sql_records_refused_and_run_queries():
+    runs: list[nl_to_sql.SqlRun] = []
+
+    nl_to_sql.run_sql(FakeClient(statement_type="DML"), "DELETE x", [], runs)
+    nl_to_sql.run_sql(FakeClient(rows=[{"n": 1}, {"n": 2}]), "SELECT 1", [], runs)
+
+    assert runs[0].error and runs[0].rows == 0
+    assert runs[1].error is None and runs[1].rows == 2

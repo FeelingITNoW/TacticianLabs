@@ -30,3 +30,9 @@ _Avoid_: counters, counter tables
 
 **Stats**:
 Rates and deltas derived from Totals, never stored.
+
+**Conversation**:
+One /ask thread, from its first question until the visitor starts a new chat. Anonymous: it names no person.
+
+**Turn**:
+One question in a Conversation and the agent's answer, or its failure.
