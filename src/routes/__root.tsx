@@ -11,7 +11,7 @@ import appCss from '../styles/app.css?url'
 import { getMetaFn } from '@/data/meta.functions'
 import { SiteHeader } from '@/components/site-header'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { DDRAGON_ORIGIN } from '@/lib/ddragon'
+import { CDRAGON_ORIGIN, DDRAGON_ORIGIN } from '@/lib/ddragon'
 
 export const Route = createRootRoute({
   head: () => ({
@@ -32,6 +32,7 @@ export const Route = createRootRoute({
       // No icon yet; an empty one stops the browser asking for /favicon.ico on every page
       { rel: 'icon', href: 'data:,' },
       { rel: 'preconnect', href: DDRAGON_ORIGIN },
+      { rel: 'preconnect', href: CDRAGON_ORIGIN },
     ],
   }),
   // The header shows the patch. If the data can't be read the pages say so themselves.

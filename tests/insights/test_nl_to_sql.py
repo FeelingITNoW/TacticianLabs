@@ -238,3 +238,8 @@ def test_run_sql_records_refused_and_run_queries():
 
     assert runs[0].error and runs[0].rows == 0
     assert runs[1].error is None and runs[1].rows == 2
+
+
+def test_instructions_tell_the_agent_to_link_the_comps_it_discusses():
+    assert "[<label>](/compositions/<comp_id>)" in prompt.INSTRUCTIONS
+    assert "?variant=<variant_id>" in prompt.INSTRUCTIONS

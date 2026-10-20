@@ -13,3 +13,9 @@ export const getCompFn = createServerFn({ method: 'GET' })
     const { getComp } = await import('@/server/compositions.server')
     return getComp(data.compId)
   })
+
+/** The latest patch's comp variants, for the /ask cards. */
+export const getVariantsFn = createServerFn({ method: 'GET' }).handler(async () => {
+  const { getVariants } = await import('@/server/compositions.server')
+  return getVariants()
+})

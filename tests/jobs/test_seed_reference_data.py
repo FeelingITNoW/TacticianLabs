@@ -69,23 +69,42 @@ class TestSetEighteenReferenceData:
         assert counts["artifact"] >= 27
         assert counts["radiant"] >= 30
 
-    def test_every_row_has_a_versioned_image_path(self):
-        for rows, group in (
-            (_load_champions(), "tft-champion"),
-            (_load_traits(), "tft-trait"),
-            (_load_items(), "tft-item"),
-        ):
+    def test_every_row_has_an_absolute_png_url(self):
+        for rows in (_load_champions(), _load_traits(), _load_items()):
             for row in rows:
-                version, img, folder, filename = row["image"].split("/")
-                assert (version, img, folder) == ("16.19.1", "img", group)
-                assert filename.endswith(".png")
+                assert row["image"].startswith("https://")
+                assert row["image"].endswith(".png")
 
-    def test_images_are_read_from_the_data_not_the_api_name(self):
-        champion = next(c for c in _load_champions() if c["api_name"] == "DA_18_Ahri")
+    def test_items_and_traits_use_versioned_data_dragon_urls(self):
+        for rows, group in ((_load_traits(), "tft-trait"), (_load_items(), "tft-item")):
+            for row in rows:
+                assert row["image"].startswith(
+                    f"https://ddragon.leagueoflegends.com/cdn/16.19.1/img/{group}/"
+                )
+
+    def test_champions_use_the_square_community_dragon_portrait(self):
+        champion = next(c for c in _load_champions() if c["api_name"] == "DA_Gromp18_AP")
+
+        assert champion["image"] == (
+            "https://raw.communitydragon.org/16.19/game/assets/characters/"
+            "tft18_gromp/tft18_gromp_square.png"
+        )
+
+    def test_every_champion_has_a_community_dragon_portrait(self):
+        for champion in _load_champions():
+            assert "raw.communitydragon.org" in champion["image"], champion["api_name"]
+
+    def test_trait_images_are_read_from_the_data_not_the_api_name(self):
         trait = next(t for t in _load_traits() if t["api_name"] == "DA_18_Adaptor")
 
-        assert champion["image"].endswith("TFT18_Ahri_splash_centered_27.TFT_Set18.png")
         assert trait["image"].endswith("Trait_Icon_18_Adaptor.TFT_Set18.png")
+
+    def test_trait_styles_follow_the_breakpoints(self):
+        traits = {t["api_name"]: t["styles"] for t in _load_traits()}
+
+        assert traits["DA_18_Adaptor"] == ["bronze", "silver", "gold"]
+        assert traits["DA_18_Elderwood"] == ["bronze", "silver", "gold", "gold", "prismatic"]
+        assert traits["DA_DravenUniqueTrait18"] == ["unique"]
 
     def test_api_names_are_unique(self):
         for rows in (_load_champions(), _load_traits(), _load_items()):
