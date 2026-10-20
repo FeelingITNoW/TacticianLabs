@@ -51,6 +51,13 @@ The match archive lives in `google_storage_bucket.tft_match_data` here; the job 
    gcloud builds trigger run tft-ingest-deploy --region=us-central1 --branch=main
    ```
 
+5. **Point the /ask agent at its log bucket.** Terraform creates the `<project_id>-ask-logs` bucket (objects deleted after `ask_log_retention_days`, 180 by default) and the `tft-ask-agent` service account, which can run and read BigQuery queries and write to that bucket only. The key is created by hand so it never lands in tfstate:
+   ```sh
+   gcloud iam service-accounts keys create agent-key.json \
+     --iam-account=$(terraform output -raw ask_agent_service_account)
+   ```
+   On the agent's Railway service, set `GOOGLE_CREDENTIALS_JSON` to the contents of `agent-key.json` (replacing the old read-only key) and `ASK_LOG_BUCKET` to `terraform output -raw ask_logs_bucket`, then delete the local file. Read the logs back with `ASK_LOG_BUCKET=... PYTHONPATH=include python -m insights.conversations list`.
+
 ## Day to day
 
 - Run now: `gcloud run jobs execute tft-ingest --region=us-central1 --wait`

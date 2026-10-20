@@ -22,3 +22,13 @@ output "gcs_bucket" {
 output "bigquery_dataset" {
   value = google_bigquery_dataset.tft.dataset_id
 }
+
+output "ask_logs_bucket" {
+  description = "Set as ASK_LOG_BUCKET on the agent service."
+  value       = google_storage_bucket.ask_logs.name
+}
+
+output "ask_agent_service_account" {
+  description = "Create a key for it and set that as the agent's GOOGLE_CREDENTIALS_JSON."
+  value       = google_service_account.ask_agent.email
+}

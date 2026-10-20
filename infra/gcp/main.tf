@@ -6,6 +6,8 @@ locals {
   # something project-scoped unless the caller picks their own.
   gcs_bucket_name = coalesce(var.gcs_bucket_name, "${var.project_id}-tft-match-data")
 
+  ask_logs_bucket_name = "${var.project_id}-ask-logs"
+
   # The Cloud Build trigger must sit in the same region as the Developer
   # Connect connection referenced by git_repository_link, which need not be
   # var.region (Cloud Run/Artifact Registry/Scheduler's region).
@@ -44,6 +46,54 @@ resource "google_storage_bucket" "tft_match_data" {
   force_destroy               = false
 
   depends_on = [google_project_service.apis]
+}
+
+# --- /ask conversation logs -------------------------------------------------
+
+# One JSON object per conversation (conversations/<uuid>.json), written by the SQL agent.
+resource "google_storage_bucket" "ask_logs" {
+  name                        = local.ask_logs_bucket_name
+  location                    = var.region
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  force_destroy               = false
+
+  lifecycle_rule {
+    action {
+      type = "Delete"
+    }
+    condition {
+      age = var.ask_log_retention_days
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# The SQL agent on Railway. Its key is created by hand and set as that service's
+# GOOGLE_CREDENTIALS_JSON, so it never lands in tfstate.
+resource "google_service_account" "ask_agent" {
+  account_id   = "tft-ask-agent"
+  display_name = "TFT /ask SQL agent"
+}
+
+resource "google_project_iam_member" "ask_agent_bigquery_jobs" {
+  project = var.project_id
+  role    = "roles/bigquery.jobUser"
+  member  = "serviceAccount:${google_service_account.ask_agent.email}"
+}
+
+resource "google_bigquery_dataset_iam_member" "ask_agent_viewer" {
+  dataset_id = google_bigquery_dataset.tft.dataset_id
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.ask_agent.email}"
+}
+
+resource "google_storage_bucket_iam_member" "ask_agent_logs" {
+  bucket = google_storage_bucket.ask_logs.name
+  role   = "roles/storage.objectUser"
+  member = "serviceAccount:${google_service_account.ask_agent.email}"
 }
 
 # --- Artifact Registry ------------------------------------------------------

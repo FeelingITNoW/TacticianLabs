@@ -55,3 +55,9 @@ variable "gcs_bucket_name" {
   default     = null
   description = "Bucket for raw match JSON. GCS names are globally unique, so the default is \"<project_id>-tft-match-data\"; set this if that's taken."
 }
+
+variable "ask_log_retention_days" {
+  type        = number
+  default     = 180
+  description = "Days /ask conversation logs are kept before the bucket deletes them."
+}

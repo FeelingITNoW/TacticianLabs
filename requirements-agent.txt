@@ -1,3 +1,4 @@
 # Runtime deps for the SQL agent service (Dockerfile.agent). Versions match uv.lock.
 google-cloud-bigquery==3.46.1
+google-cloud-storage==3.15.0
 google-genai==1.70.0

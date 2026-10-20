@@ -54,6 +54,8 @@ function AskPage() {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const nextId = useRef(0)
+  // Names the thread in the agent's conversation log; a new chat gets a new one
+  const conversationId = useRef<string>(undefined)
   const bottom = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -64,6 +66,7 @@ function AskPage() {
     question = question.trim()
     if (!question || busy) return
     const id = nextId.current++
+    conversationId.current ??= crypto.randomUUID()
     const history: AgentTurn[] = earlier
       .filter((e) => e.answer)
       .flatMap<AgentTurn>((e) => [
@@ -75,7 +78,7 @@ function AskPage() {
     setDraft('')
     setBusy(true)
     try {
-      const answer = await askAgentFn({ data: { question, history } })
+      const answer = await askAgentFn({ data: { question, history, conversation_id: conversationId.current } })
       setThread((t) => t.map((e) => (e.id === id ? { ...e, answer } : e)))
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : 'The agent failed to answer'
@@ -92,7 +95,10 @@ function AskPage() {
         description="Ask a question in plain English. Answers come from the latest patch's ranked stats."
       >
         {thread.length > 0 && (
-          <Button variant="outline" size="sm" disabled={busy} onClick={() => setThread([])}>
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => {
+              conversationId.current = undefined
+              setThread([])
+            }}>
             New chat
           </Button>
         )}
@@ -152,6 +158,10 @@ function AskPage() {
           <div ref={bottom} />
         </div>
       )}
+
+      <p className="mb-2 text-center text-xs text-muted-foreground">
+        Questions and answers are logged to improve the agent.
+      </p>
 
       <form
         className="sticky bottom-4 flex items-end gap-2 rounded-lg border bg-card p-2 shadow-sm"

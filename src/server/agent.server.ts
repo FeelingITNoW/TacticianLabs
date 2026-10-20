@@ -6,13 +6,17 @@ const AGENT_URL = process.env.AGENT_URL ?? 'http://127.0.0.1:8001'
 const TIMEOUT_MS = 120_000
 
 /** Asks the agent. Failures are logged here and rethrown as a message that is safe to show. */
-export async function askAgent(question: string, history: AgentTurn[]): Promise<AgentAnswer> {
+export async function askAgent(
+  question: string,
+  history: AgentTurn[],
+  conversationId?: string,
+): Promise<AgentAnswer> {
   let response: Response
   try {
     response = await fetch(`${AGENT_URL}/ask`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ question, history }),
+      body: JSON.stringify({ question, history, conversation_id: conversationId }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     })
   } catch (error) {
