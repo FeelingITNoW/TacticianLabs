@@ -2,5 +2,5 @@
   {"name": "api_name", "type": "STRING", "mode": "REQUIRED"},
   {"name": "name", "type": "STRING"},
   {"name": "item_type", "type": "STRING"},
-  {"name": "image", "type": "STRING", "description": "Data Dragon path under /cdn/, e.g. 16.19.1/img/tft-champion/<file>.png"}
+  {"name": "image", "type": "STRING", "description": "Icon URL (Data Dragon)"}
 ]

@@ -42,7 +42,7 @@ export function CompCard({ comp }: { comp: CompRow }) {
           <div className="mt-3 flex flex-wrap gap-3">
             {traits.map((trait) => (
               <span key={trait.apiName} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <GameIcon kind="trait" image={trait.image} name={trait.name} size={22} />
+                <GameIcon kind="trait" image={trait.image} name={trait.name} style={trait.style} size={22} />
                 {trait.name} {Math.round(trait.avgTier)}
               </span>
             ))}
@@ -59,7 +59,7 @@ export function CompCard({ comp }: { comp: CompRow }) {
   )
 }
 
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
+export function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
       <dt className="text-[11px] text-muted-foreground">{label}</dt>

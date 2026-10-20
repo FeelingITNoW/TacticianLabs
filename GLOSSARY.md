@@ -24,6 +24,13 @@ The boards of a comp that fit none of its variants.
 Put a board into its nearest comp, or leave it out if it is too dissimilar.
 _Avoid_: classify
 
+**Tier**:
+The breakpoint an active trait reached on a board, counted from 1.
+
+**Style**:
+How an active trait looks in game at a Tier: bronze, silver, gold, prismatic or unique.
+_Avoid_: rank, medal, colour
+
 **Totals**:
 Exact per-patch counts (boards, matches, placement sum, top 4s, wins) kept for an entity such as a unit, item, trait or comp; never rates.
 _Avoid_: counters, counter tables

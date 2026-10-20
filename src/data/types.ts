@@ -6,7 +6,7 @@ export type ItemType = 'artifact' | 'radiant' | 'component' | 'emblem' | 'comple
 export interface Entity {
   apiName: string
   name: string
-  /** Path under https://ddragon.leagueoflegends.com/cdn/, e.g. 16.19.1/img/tft-item/x.png */
+  /** Icon URL: Data Dragon for items and traits, CommunityDragon for champions */
   image: string | null
 }
 
@@ -19,7 +19,13 @@ export interface ItemRef extends Entity {
   itemType: ItemType | null
 }
 
-export type TraitRef = Entity
+/** What an active trait looks like in game, per tier */
+export type TraitStyle = 'bronze' | 'silver' | 'gold' | 'prismatic' | 'unique'
+
+export interface TraitRef extends Entity {
+  /** Style of each tier, in order: styles[tier - 1]. Empty when unknown. */
+  styles: TraitStyle[]
+}
 
 export interface ReferenceLists {
   champions: ChampionRef[]
@@ -89,9 +95,11 @@ export interface CompUnit extends ChampionRef {
   carry: boolean
 }
 
-export interface CompTrait extends Entity {
+export interface CompTrait extends TraitRef {
   frequency: number
   avgTier: number
+  /** Style of the comp's average tier, rounded; null when the trait's styles are unknown */
+  style: TraitStyle | null
 }
 
 export interface CompRow extends Stats {
@@ -103,6 +111,27 @@ export interface CompRow extends Stats {
   frequency: number
   units: CompUnit[]
   traits: CompTrait[]
+}
+
+export interface VariantDiff {
+  kind: 'unit' | 'trait'
+  change: 'added' | 'removed'
+  apiName: string
+  name: string
+  image: string | null
+}
+
+/** A comp's variant: the same comp played with a few different units or traits */
+export interface VariantRow extends Stats {
+  compId: string
+  compLabel: string
+  variantId: string
+  label: string
+  /** Share of the comp's boards that fit the variant (0-1) */
+  shareOfComp: number
+  units: CompUnit[]
+  traits: CompTrait[]
+  diff: VariantDiff[]
 }
 
 export type Tier = 'CHALLENGER' | 'GRANDMASTER' | 'MASTER'

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { Send } from 'lucide-react'
 import { askAgentFn } from '@/data/agent.functions'
+import { getCompsFn, getVariantsFn } from '@/data/compositions.functions'
 import { getReferenceListsFn } from '@/data/meta.functions'
 import type { AgentAnswer, AgentTurn } from '@/data/types'
 import { AgentMarkdown } from '@/components/agent-markdown'
@@ -10,7 +11,15 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 
 export const Route = createFileRoute('/ask')({
-  loader: () => getReferenceListsFn(),
+  loader: async () => {
+    // Comps are optional: without them the answers still render, with comp links as plain text
+    const [reference, comps, variants] = await Promise.all([
+      getReferenceListsFn(),
+      getCompsFn().catch(() => []),
+      getVariantsFn().catch(() => []),
+    ])
+    return { reference, comps, variants }
+  },
   head: () => ({ meta: [{ title: 'Ask · Tactician Labs' }] }),
   component: AskPage,
 })
@@ -49,7 +58,7 @@ function Pending() {
 }
 
 function AskPage() {
-  const reference = Route.useLoaderData()
+  const { reference, comps, variants } = Route.useLoaderData()
   const [thread, setThread] = useState<Exchange[]>([])
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -123,7 +132,7 @@ function AskPage() {
               <div className="rounded-lg border p-4">
                 {exchange.answer ? (
                   <>
-                    <AgentMarkdown text={exchange.answer.text} reference={reference} />
+                    <AgentMarkdown text={exchange.answer.text} reference={reference} comps={comps} variants={variants} />
                     {exchange.answer.queries.length > 0 && (
                       <details className="mt-3 text-xs">
                         <summary className="cursor-pointer text-muted-foreground">

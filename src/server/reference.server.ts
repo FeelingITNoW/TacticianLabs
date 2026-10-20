@@ -1,9 +1,10 @@
 import '@tanstack/react-start/server-only'
-import type { ChampionRef, ItemRef, ItemType, ReferenceLists, TraitRef } from '@/data/types'
+import type { ChampionRef, ItemRef, ItemType, ReferenceLists, TraitRef, TraitStyle } from '@/data/types'
 import { runQuery, table } from './bigquery.server'
 import { cached, HOUR } from './cache.server'
 
 const ITEM_TYPES = new Set<string>(['artifact', 'radiant', 'component', 'emblem', 'completed', 'misc'])
+const TRAIT_STYLES = new Set<string>(['bronze', 'silver', 'gold', 'prismatic', 'unique'])
 
 export interface Reference {
   champions: Map<string, ChampionRef>
@@ -18,14 +19,18 @@ interface ChampionRow {
   image: string | null
 }
 
+interface ItemRow {
+  api_name: string
+  name: string | null
+  image: string | null
+  item_type: string | null
+}
+
 interface TraitRow {
   api_name: string
   name: string | null
   image: string | null
-}
-
-interface ItemRow extends TraitRow {
-  item_type: string | null
+  styles: string[] | null
 }
 
 /** Champion, trait and item names, costs, types and icons, keyed by Riot's api name. */
@@ -35,7 +40,7 @@ export function getReference(): Promise<Reference> {
       runQuery<ChampionRow>(`SELECT api_name, name, cost, image FROM ${table('champions')}`, undefined, {
         fn: 'reference.champions',
       }),
-      runQuery<TraitRow>(`SELECT api_name, name, image FROM ${table('traits')}`, undefined, {
+      runQuery<TraitRow>(`SELECT api_name, name, image, styles FROM ${table('traits')}`, undefined, {
         fn: 'reference.traits',
       }),
       runQuery<ItemRow>(`SELECT api_name, name, item_type, image FROM ${table('items')}`, undefined, {
@@ -50,7 +55,15 @@ export function getReference(): Promise<Reference> {
         ]),
       ),
       traits: new Map(
-        traits.map((r) => [r.api_name, { apiName: r.api_name, name: r.name ?? r.api_name, image: r.image }]),
+        traits.map((r) => [
+          r.api_name,
+          {
+            apiName: r.api_name,
+            name: r.name ?? r.api_name,
+            image: r.image,
+            styles: (r.styles ?? []).filter((s): s is TraitStyle => TRAIT_STYLES.has(s)),
+          },
+        ]),
       ),
       items: new Map(
         items.map((r) => [
@@ -81,7 +94,14 @@ export function itemRef(ref: Reference, apiName: string, name?: string | null, t
 }
 
 export function traitRef(ref: Reference, apiName: string): TraitRef {
-  return ref.traits.get(apiName) ?? { apiName, name: apiName, image: null }
+  return ref.traits.get(apiName) ?? { apiName, name: apiName, image: null, styles: [] }
+}
+
+/** The style of a comp's average tier, rounded and kept within the trait's tiers. */
+export function traitStyle(trait: TraitRef, avgTier: number): TraitStyle | null {
+  if (trait.styles.length === 0) return null
+  const tier = Math.min(Math.max(Math.round(avgTier), 1), trait.styles.length)
+  return trait.styles[tier - 1]
 }
 
 export async function getReferenceLists(): Promise<ReferenceLists> {

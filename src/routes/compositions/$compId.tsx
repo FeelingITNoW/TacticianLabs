@@ -55,7 +55,7 @@ const traitColumns: Column<CompTrait>[] = [
     sortValue: (t) => t.name,
     cell: (t) => (
       <span className="flex items-center gap-3">
-        <GameIcon kind="trait" image={t.image} name={t.name} size={28} />
+        <GameIcon kind="trait" image={t.image} name={t.name} style={t.style} size={28} />
         <span className="font-medium">{t.name}</span>
       </span>
     ),

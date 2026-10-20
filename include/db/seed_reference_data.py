@@ -6,7 +6,9 @@ use and which stays the same across patches. Each run adds new rows and updates
 existing ones, and never deletes, so names still resolve for older patches' stats.
 It then refreshes the names, costs and item counts stored on the match tables
 (db.reference_names).
-Source: the Data Dragon tft-*.json files in db/reference_data/ (version 16.19.1).
+Source: the Data Dragon tft-*.json files in db/reference_data/ (version 16.19.1), plus
+db/reference_data/cdragon-tft18.json (CommunityDragon, from db.fetch_cdragon) for champion
+icons and trait styles.
 
 Usage:
     PYTHONPATH=include python -m db.seed_reference_data
@@ -22,6 +24,11 @@ from db.bq import column_names, make_client, run_query, staged, table_ref
 from db.reference_names import backfill_names
 
 REFERENCE_DIR = Path(__file__).parent / "reference_data"
+
+DDRAGON_CDN = "https://ddragon.leagueoflegends.com/cdn/"
+
+# CommunityDragon's trait `style` codes, in game order of strength
+TRAIT_STYLES = {1: "bronze", 3: "silver", 4: "unique", 5: "gold", 6: "prismatic"}
 
 TFT_SET = 18
 # Set 18 api names start with "DA_" (e.g. DA_18_KhaZix, DA_18_Brawler,
@@ -45,23 +52,47 @@ def _entries(filename: str) -> list[dict]:
 
 
 def _image_path(version: str, entry: dict) -> str:
-    """Where the icon lives under https://ddragon.leagueoflegends.com/cdn/. The file name
-    can't be read from the api name (champions are e.g. TFT18_Xayah_splash_centered_8 and
-    traits Trait_Icon_18_Adaptor), and the version is kept so old rows keep a working URL."""
+    """The icon's full Data Dragon URL. The file name can't be read from the api name
+    (champions are e.g. TFT18_Xayah_splash_centered_8 and traits Trait_Icon_18_Adaptor), and
+    the version is kept so old rows keep a working URL."""
     image = entry["image"]
-    return f"{version}/img/{image['group']}/{image['full']}"
+    return f"{DDRAGON_CDN}{version}/img/{image['group']}/{image['full']}"
+
+
+def _cdragon() -> dict:
+    with open(REFERENCE_DIR / f"cdragon-tft{TFT_SET}.json") as f:
+        return json.load(f)
+
+
+def trait_styles(codes: list[int | None]) -> list[str]:
+    """Style names per breakpoint; a code we don't know falls back to bronze."""
+    return [TRAIT_STYLES.get(code, "bronze") for code in codes]
 
 
 def _load_champions() -> list[dict]:
+    # Data Dragon's champion art is a wide splash that crops badly; CommunityDragon has the
+    # in-game square portrait. A unit missing from its snapshot keeps the splash.
+    icons = _cdragon()["champions"]
     return [
-        {"api_name": v["id"], "name": v["name"], "cost": v.get("cost"), "image": v["image"]}
+        {
+            "api_name": v["id"],
+            "name": v["name"],
+            "cost": v.get("cost"),
+            "image": icons.get(v["id"], v["image"]),
+        }
         for v in _entries("tft-champion.json")
     ]
 
 
 def _load_traits() -> list[dict]:
+    styles = _cdragon()["trait_styles"]
     return [
-        {"api_name": v["id"], "name": v["name"], "image": v["image"]}
+        {
+            "api_name": v["id"],
+            "name": v["name"],
+            "image": v["image"],
+            "styles": trait_styles(styles.get(v["id"], [])),
+        }
         for v in _entries("tft-trait.json")
     ]
 
