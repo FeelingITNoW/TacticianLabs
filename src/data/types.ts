@@ -169,8 +169,31 @@ export interface AgentTurn {
   text: string
 }
 
+export interface RollOddsRow {
+  gold: number
+  rolls: number
+  /** Odds of buying every copy of every unit, 0 to 1 */
+  allUnits: number
+  /** Odds of each unit's copies alone, by unit name */
+  perUnit: Record<string, number>
+}
+
+/** One roll_odds call the agent made: what it asked and what came back */
+export interface RollOddsRun {
+  level: number
+  units: { name: string; cost: number; copies: number; copiesOut: number }[]
+  /** Copies of a cost gone from the pool that aren't the units' own */
+  tierOut: { cost: number; copies: number }[]
+  /** The odds at the amounts of gold the agent asked about */
+  results: RollOddsRow[]
+  /** The odds after every roll, from when the copies are paid for to about 95%: what the chart draws */
+  curve: RollOddsRow[]
+}
+
 export interface AgentAnswer {
   text: string
   /** The SQL the agent ran, in order */
   queries: string[]
+  /** The roll odds the agent worked out, in order */
+  rollOdds: RollOddsRun[]
 }

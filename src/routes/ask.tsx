@@ -6,6 +6,9 @@ import { getCompsFn, getVariantsFn } from '@/data/compositions.functions'
 import { getReferenceListsFn } from '@/data/meta.functions'
 import type { AgentAnswer, AgentTurn } from '@/data/types'
 import { AgentMarkdown } from '@/components/agent-markdown'
+import { RollOddsCard } from '@/components/roll-odds-card'
+import { RollOddsChart } from '@/components/roll-odds-chart'
+import { distinctRollOdds } from '@/lib/roll-odds'
 import { PageHeader } from '@/components/page-states'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -133,6 +136,23 @@ function AskPage() {
                 {exchange.answer ? (
                   <>
                     <AgentMarkdown text={exchange.answer.text} reference={reference} comps={comps} variants={variants} />
+                    {exchange.answer.rollOdds.length > 0 && (
+                      <div className="mt-4 space-y-4">
+                        {distinctRollOdds(exchange.answer.rollOdds).map((run, i) => (
+                          <RollOddsChart key={i} run={run} />
+                        ))}
+                      </div>
+                    )}
+                    {exchange.answer.rollOdds.length > 0 && (
+                      <details className="mt-3 text-xs">
+                        <summary className="cursor-pointer text-muted-foreground">
+                          Roll odds ({exchange.answer.rollOdds.length})
+                        </summary>
+                        {exchange.answer.rollOdds.map((run, i) => (
+                          <RollOddsCard key={i} run={run} />
+                        ))}
+                      </details>
+                    )}
                     {exchange.answer.queries.length > 0 && (
                       <details className="mt-3 text-xs">
                         <summary className="cursor-pointer text-muted-foreground">

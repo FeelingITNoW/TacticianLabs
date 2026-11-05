@@ -1,0 +1,1 @@
+Take the icons from the actual Riot TFT Data Dragon. Update the icons such that it matches them. Additionally, for the ask agent, whenever a composition is talked about, display the composition in a view so that the players know the composition. 

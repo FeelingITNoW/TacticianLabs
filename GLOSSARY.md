@@ -38,6 +38,25 @@ _Avoid_: counters, counter tables
 **Stats**:
 Rates and deltas derived from Totals, never stored.
 
+**Unit**:
+A champion a player fields. Costs 1 to 5 gold, and a Board holds several.
+
+**Copy**:
+One purchasable instance of a Unit. Three Copies make a 2-star, nine a 3-star.
+
+**Pool**:
+The Copies of every Unit that one lobby's players share. Each Unit has a fixed number of Copies by cost, and a Copy bought leaves the Pool until it is sold.
+
+**Shop**:
+The five Units a player is offered at once, drawn from the Pool by the odds of the player's level.
+
+**Roll**:
+Paying 2 gold to redraw the Shop.
+
+**Hit**:
+Buying every Copy a Board still needs. Roll odds say how likely a Hit is at an amount of gold.
+_Avoid_: find, land
+
 **Conversation**:
 One /ask thread, from its first question until the visitor starts a new chat. Anonymous: it names no person.
 
