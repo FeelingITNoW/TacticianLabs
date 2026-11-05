@@ -1,7 +1,7 @@
 """HTTP service the web app's /ask page calls: `PYTHONPATH=include python -m insights.server`.
 
 POST /ask {"question": str, "history": [{"role": "user"|"model", "text": str}],
-"conversation_id": uuid, optional} returns {"text": str, "queries": [str]}. With a
+"conversation_id": uuid, optional} returns {"text": str, "queries": [str], "roll_odds": [dict]}, each roll_odds with the odds curve the page charts. With a
 conversation_id and ASK_LOG_BUCKET set, each turn (also a failed one) is appended to that
 conversation's log in Cloud Storage after the response is sent (see conversation_log).
 It is long-lived so the schema and
@@ -76,7 +76,11 @@ def handle_ask(payload, ask_fn: Callable) -> tuple[int, dict, Callable | None]:
     answer, error = None, None
     try:
         answer = ask_fn(question, history=history)
-        status, body = 200, {"text": answer.text, "queries": answer.queries}
+        status, body = 200, {
+            "text": answer.text,
+            "queries": answer.queries,
+            "roll_odds": answer.roll_odds,
+        }
     except Exception as exc:
         log.exception("agent failed")
         answer = getattr(exc, "answer", None)  # what the agent had used up

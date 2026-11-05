@@ -7,7 +7,7 @@ import pytest
 from google.api_core import exceptions
 
 from insights import conversation_log
-from insights.nl_to_sql import Answer, ModelCall, SqlRun
+from insights.nl_to_sql import Answer, ModelCall, RollOddsRun, SqlRun
 
 ID = "0b1f6a0e-6a4e-4c53-9d5b-1c2a3b4c5d6e"
 NAME = f"conversations/{ID}.json"
@@ -68,6 +68,10 @@ def test_turn_record_sums_every_model_call():
             ModelCall(prompt_tokens=150, output_tokens=20, total_tokens=170, latency_ms=20),
         ],
         sql_runs=[SqlRun(query="SELECT 1", rows=1, bytes_billed=10, latency_ms=4)],
+        roll_odds=[{"level": 8, "results": [{"gold": 50, "all_units": 0.5}]}],
+        roll_odds_runs=[
+            RollOddsRun(args={"level": 8, "units": [{"name": "Ahri", "copies": 2}]}, latency_ms=3)
+        ],
     )
 
     record = conversation_log.turn_record(
@@ -85,6 +89,11 @@ def test_turn_record_sums_every_model_call():
     assert record["thinking_tokens"] is None  # never reported
     assert record["latency_ms"] == 99 and record["history_turns"] == 2
     assert record["sql_runs"][0]["bytes_billed"] == 10
+    # The inputs and timing of a roll odds call are logged, never its results
+    assert record["roll_odds_runs"] == [
+        {"args": {"level": 8, "units": [{"name": "Ahri", "copies": 2}]}, "latency_ms": 3, "error": None}
+    ]
+    assert "0.5" not in json.dumps(record)
     assert len(record["model_calls"]) == 2
     assert record["started_at"] == "2026-10-19T00:00:00+00:00"
 

@@ -15,6 +15,7 @@ PROJECT = "test-project"
 @pytest.fixture(autouse=True)
 def clear_allowed_cache():
     nl_to_sql._allowed.clear()
+    nl_to_sql._unit_costs.clear()
 
 
 class FakeClient:
@@ -243,3 +244,137 @@ def test_run_sql_records_refused_and_run_queries():
 def test_instructions_tell_the_agent_to_link_the_comps_it_discusses():
     assert "[<label>](/compositions/<comp_id>)" in prompt.INSTRUCTIONS
     assert "?variant=<variant_id>" in prompt.INSTRUCTIONS
+
+
+UNITS = [
+    {"name": "Lillia", "cost": 4},
+    {"name": "Ahri", "cost": 4},
+    {"name": "Kha'Zix", "cost": 3},
+]
+
+
+def roll_odds_call(**args):
+    call = SimpleNamespace(name="roll_odds", args=args)
+    content = types.Content(role="model", parts=[types.Part(text="calling")])
+    return SimpleNamespace(
+        function_calls=[call],
+        text=None,
+        candidates=[SimpleNamespace(content=content)],
+        usage_metadata=usage(100, 5, 105),
+    )
+
+
+def test_roll_odds_finds_units_by_name_and_records_the_run():
+    answer = nl_to_sql.Answer(text="")
+    units = [{"name": "lillia", "copies": 3}, {"name": "KHAZIX", "copies": 1}]
+
+    result = nl_to_sql.run_roll_odds(FakeClient(rows=UNITS), 8, units, None, [60], answer)
+
+    assert [u["name"] for u in result["units"]] == ["Lillia", "Kha'Zix"]
+    assert [u["cost"] for u in result["units"]] == [4, 3]
+    assert result["results"][0]["gold"] == 60
+    assert 0 < result["results"][0]["all_units"] < 1
+    assert answer.roll_odds_runs[0].error is None
+    assert answer.roll_odds_runs[0].args["units"] == units
+
+
+def test_roll_odds_gives_the_curve_to_the_page_and_not_to_the_model():
+    answer = nl_to_sql.Answer(text="")
+
+    result = nl_to_sql.run_roll_odds(
+        FakeClient(rows=UNITS), 8, [{"name": "Lillia", "copies": 3}], None, [60], answer
+    )
+
+    assert "curve" not in result
+    [shown] = answer.roll_odds
+    assert shown["results"] == result["results"]
+    # 3 four-cost copies are 12 gold, then a point per 2-gold roll, covering at least 100 gold
+    assert shown["curve"][0]["gold"] == 12 and shown["curve"][1]["gold"] == 14
+    assert shown["curve"][-1]["gold"] >= 100
+
+
+def test_roll_odds_reads_the_units_once():
+    client = FakeClient(rows=UNITS)
+    answer = nl_to_sql.Answer(text="")
+
+    for _ in range(2):
+        nl_to_sql.run_roll_odds(client, 8, [{"name": "Ahri", "copies": 1}], None, [60], answer)
+
+    assert len(client.ran) == 1
+
+
+def test_roll_odds_tier_out_and_copies_out_lower_the_odds():
+    client = FakeClient(rows=UNITS)
+    answer = nl_to_sql.Answer(text="")
+    units = [{"name": "Ahri", "copies": 2}]
+    held = [{"name": "Ahri", "copies": 2, "copies_out": 4}]
+
+    open_pool = nl_to_sql.run_roll_odds(client, 8, units, None, [80], answer)
+    thin = nl_to_sql.run_roll_odds(client, 8, held, [{"cost": 4, "copies": 30}], [80], answer)
+
+    assert thin["tier_out"] == [{"cost": 4, "copies": 30}]
+    assert thin["results"][0]["all_units"] < open_pool["results"][0]["all_units"]
+
+
+def test_roll_odds_unknown_unit_lists_the_valid_names():
+    answer = nl_to_sql.Answer(text="")
+
+    result = nl_to_sql.run_roll_odds(
+        FakeClient(rows=UNITS), 8, [{"name": "Lilia", "copies": 3}], None, None, answer
+    )
+
+    assert "Unknown unit(s): Lilia" in result["error"]
+    assert "Ahri, Kha'Zix, Lillia" in result["error"]
+    assert answer.roll_odds == []
+    assert answer.roll_odds_runs[0].error == result["error"]
+
+
+@pytest.mark.parametrize(
+    "level, units",
+    [
+        (1, [{"name": "Ahri", "copies": 1}]),
+        (8, [{"name": "Ahri", "copies": 0}]),
+        (8, [{"name": "Ahri"}]),
+        (8, []),
+    ],
+)
+def test_roll_odds_refused_input_goes_back_to_the_model(level, units):
+    answer = nl_to_sql.Answer(text="")
+
+    result = nl_to_sql.run_roll_odds(FakeClient(rows=UNITS), level, units, None, None, answer)
+
+    assert "error" in result
+    assert answer.roll_odds == [] and answer.roll_odds_runs[0].error
+
+
+def test_ask_dispatches_each_call_to_its_tool(agent_env):
+    genai_client = FakeGenai(
+        [
+            roll_odds_call(level=8, units=[{"name": "Ahri", "copies": 2}], gold=[60]),
+            tool_call("SELECT 1"),
+            final(),
+        ]
+    )
+
+    answer = nl_to_sql.ask("odds?", client=FakeClient(rows=UNITS), genai_client=genai_client)
+
+    assert answer.text == "done"
+    assert answer.queries == ["SELECT 1"]
+    assert len(answer.roll_odds) == 1 and len(answer.roll_odds_runs) == 1
+
+
+def test_ask_answers_an_unknown_tool_and_bad_arguments_with_an_error(agent_env):
+    wrong_name = roll_odds_call()
+    wrong_name.function_calls[0].name = "drop_tables"
+    genai_client = FakeGenai([wrong_name, roll_odds_call(lvl=8), final()])
+
+    answer = nl_to_sql.ask("q", client=FakeClient(rows=UNITS), genai_client=genai_client)
+
+    assert answer.text == "done"
+    assert answer.roll_odds_runs == [] and answer.queries == []
+
+
+def test_instructions_make_the_agent_ask_for_the_level_and_leave_the_chart_to_the_page():
+    assert "ask for it" in prompt.INSTRUCTIONS
+    assert "do not describe or draw a chart yourself" in prompt.INSTRUCTIONS
+    assert "roll_odds" in prompt.EXAMPLES

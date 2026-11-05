@@ -60,6 +60,9 @@ def turn_record(
         "cached_tokens": _sum(calls, "cached_tokens"),
         "model_calls": [asdict(c) for c in calls],
         "sql_runs": [asdict(r) for r in getattr(answer, "sql_runs", None) or []],
+        "roll_odds_runs": [
+            asdict(r) for r in getattr(answer, "roll_odds_runs", None) or []
+        ],
     }
 
 

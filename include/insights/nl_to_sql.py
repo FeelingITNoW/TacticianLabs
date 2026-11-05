@@ -4,16 +4,20 @@ Run with `PYTHONPATH=include python -m insights.nl_to_sql "which champions are b
 Needs Application Default Credentials, GOOGLE_CLOUD_PROJECT, GEMINI_API_KEY and
 GEMINI_SQL_MODEL (the Gemini model that writes the SQL).
 
-The model gets one tool, `sql` (run_sql), which dry-runs each query first and refuses
+The model gets two tools. `sql` (run_sql) dry-runs each query first and refuses
 anything that isn't a SELECT over prompt.VIEWS or that would bill more than
 MAX_BYTES_BILLED. Every view reads precomputed counters (3-item builds and comps' star
 levels, items and board costs included), so a question costs kilobytes to megabytes.
+`roll_odds` (run_roll_odds) looks the units' costs up in current_champion_stats and gives the
+odds of rolling a board at several amounts of gold (ai_tools/roll_odds.py).
 Errors go back to the model as the tool result, so it can fix its own call. The text the model reads lives in insights/prompt.py.
 """
 
 import argparse
 import hashlib
+import inspect
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -22,7 +26,9 @@ from google import genai
 from google.api_core import exceptions
 from google.cloud import bigquery
 from google.genai import types
+from pydantic import BaseModel
 
+from ai_tools import roll_odds as roll_odds_calculator
 from db.bq import DATASET, make_client, table_ref
 from insights import prompt
 from insights.common import MAX_BYTES_BILLED, MAX_ROWS, json_rows
@@ -32,6 +38,7 @@ MAX_HISTORY_TURNS = 6
 
 _contexts: dict[str, str] = {}
 _allowed: dict[str, set[str]] = {}
+_unit_costs: dict[str, dict[str, tuple[str, int]]] = {}
 
 
 @dataclass
@@ -58,12 +65,35 @@ class SqlRun:
 
 
 @dataclass
+class RollOddsRun:
+    """One roll_odds call, as the model made it. The results are not kept, only the inputs."""
+
+    args: dict
+    latency_ms: int = 0
+    error: str | None = None
+
+
+class UnitNeed(BaseModel):
+    name: str
+    copies: int
+    copies_out: int = 0
+
+
+class TierOut(BaseModel):
+    cost: int
+    copies: int
+
+
+@dataclass
 class Answer:
     text: str
     queries: list[str] = field(default_factory=list)
     rows: list[dict] = field(default_factory=list)
     model_calls: list[ModelCall] = field(default_factory=list)
     sql_runs: list[SqlRun] = field(default_factory=list)
+    # The successful roll_odds results, for the page to show
+    roll_odds: list[dict] = field(default_factory=list)
+    roll_odds_runs: list[RollOddsRun] = field(default_factory=list)
     model: str = ""
     prompt_sha256: str = ""
 
@@ -179,6 +209,92 @@ def _run_guarded(
     return json_rows(rows)
 
 
+def unit_costs(client: bigquery.Client) -> dict[str, tuple[str, int]]:
+    """Every unit of the latest patch by its normalised name: (name, cost)."""
+    key = f"{client.project}.{DATASET}"
+    if key not in _unit_costs:
+        job = client.query(
+            f"SELECT name, cost FROM `{table_ref(client, 'current_champion_stats')}`",
+            job_config=bigquery.QueryJobConfig(maximum_bytes_billed=MAX_BYTES_BILLED),
+        )
+        costs: dict[str, tuple[str, int]] = {}
+        for row in job.result():
+            if row["cost"] is not None:
+                costs.setdefault(_normalise(row["name"]), (row["name"], int(row["cost"])))
+        _unit_costs[key] = costs
+    return _unit_costs[key]
+
+
+def _normalise(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def run_roll_odds(
+    client: bigquery.Client,
+    level: int,
+    units: list,
+    tier_out: list | None,
+    gold: list[int] | None,
+    answer: Answer,
+) -> dict:
+    """Run the roll odds calculator. Problems come back as {"error": ...}, not exceptions.
+
+    Every call is recorded in answer.roll_odds_runs, and a successful one in answer.roll_odds,
+    with the odds curve the page draws. The model gets the result without the curve.
+    """
+    run = RollOddsRun(
+        args={"level": level, "units": units, "tier_out": tier_out, "gold": gold}
+    )
+    started = time.perf_counter()
+    try:
+        full = _roll_odds(client, level, units, tier_out, gold)
+        answer.roll_odds.append(full)
+        result = {key: value for key, value in full.items() if key != "curve"}
+    except ValueError as exc:  # pydantic's ValidationError is one too
+        run.error = str(exc)
+        result = {"error": run.error}
+    run.latency_ms = round((time.perf_counter() - started) * 1000)
+    answer.roll_odds_runs.append(run)
+    return result
+
+
+def _roll_odds(client, level, units, tier_out, gold) -> dict:
+    needs = [UnitNeed.model_validate(u) for u in units or []]
+    gone = [TierOut.model_validate(t) for t in tier_out or []]
+    costs = unit_costs(client)
+    unknown = [n.name for n in needs if _normalise(n.name) not in costs]
+    if unknown:
+        raise ValueError(
+            f"Unknown unit(s): {', '.join(unknown)}. Use these names: "
+            + ", ".join(sorted(name for name, _ in costs.values()))
+        )
+    targets = []
+    for need in needs:
+        name, cost = costs[_normalise(need.name)]
+        targets.append(
+            roll_odds_calculator.RollTarget(name, cost, need.copies, need.copies_out)
+        )
+    gone_by_cost: dict[int, int] = {}
+    for g in gone:
+        gone_by_cost[g.cost] = gone_by_cost.get(g.cost, 0) + g.copies
+    odds = roll_odds_calculator.calculate_roll_odds(
+        level,
+        targets,
+        gold or roll_odds_calculator.DEFAULT_GOLD,
+        gone_by_cost,
+    )
+    return {
+        "level": level,
+        "units": [
+            {"name": t.name, "cost": t.cost, "copies": t.copies, "copies_out": t.copies_out}
+            for t in targets
+        ],
+        "tier_out": [{"cost": c, "copies": n} for c, n in sorted(gone_by_cost.items())],
+        "results": odds["results"],
+        "curve": odds["curve"],
+    }
+
+
 def build_contents(question: str, history: list[dict] | None) -> list[types.Content]:
     """Earlier turns (only their text, last MAX_HISTORY_TURNS) followed by the question."""
     turns = (history or [])[-MAX_HISTORY_TURNS:]
@@ -237,13 +353,44 @@ def _ask(
             answer.rows = rows
         return rows
 
+    def roll_odds(
+        level: int,
+        units: list[UnitNeed],
+        tier_out: list[TierOut] | None = None,
+        gold: list[int] | None = None,
+    ) -> dict:
+        """Odds of buying every copy a board still needs, at several amounts of gold.
+
+        level: the player's level, 2 to 11. units: each unit the board needs, by its name, with
+        copies, the copies still to buy (a 2-star needs 3 in all, a 3-star 9; subtract what is
+        held), and optionally copies_out, copies of that unit already out of the pool (held by
+        you or anyone else). tier_out: optionally, copies of a cost that are gone and are not
+        those units' (cost and copies). gold: amounts to answer for, default 50 to 100 in 10s.
+        The gold buys the copies first, and the rest rolls at 2 gold a roll. Returns per gold
+        amount the rolls, all_units (the odds of every unit) and per_unit, or {"error": ...}.
+        """
+        return run_roll_odds(client, level, units, tier_out, gold, answer)
+
+    tools = {"sql": sql, "roll_odds": roll_odds}
+
+    def call_tool(call):
+        fn = tools.get(call.name)
+        if fn is None:
+            return [{"error": f"Unknown tool {call.name}. Use one of {sorted(tools)}."}]
+        args = dict(call.args or {})
+        try:
+            inspect.signature(fn).bind(**args)
+        except TypeError as exc:
+            return [{"error": f"Bad arguments for {call.name}: {exc}"}]
+        return fn(**args)
+
     system = build_context(client)
     answer.prompt_sha256 = hashlib.sha256(system.encode()).hexdigest()
     # The loop is ours rather than the SDK's automatic function calling, which returns
     # only the last response and so hides the tokens spent on every earlier call
     config = types.GenerateContentConfig(
         system_instruction=system,
-        tools=[sql],
+        tools=list(tools.values()),
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
     contents = build_contents(question, history)
@@ -266,7 +413,7 @@ def _ask(
                 role="user",
                 parts=[
                     types.Part.from_function_response(
-                        name=call.name, response={"result": sql(str((call.args or {}).get("query", "")))}
+                        name=call.name, response={"result": call_tool(call)}
                     )
                     for call in calls
                 ],
