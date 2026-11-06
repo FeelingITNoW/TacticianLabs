@@ -63,6 +63,9 @@ def turn_record(
         "roll_odds_runs": [
             asdict(r) for r in getattr(answer, "roll_odds_runs", None) or []
         ],
+        "gold_projection_runs": [
+            asdict(r) for r in getattr(answer, "gold_projection_runs", None) or []
+        ],
     }
 
 
