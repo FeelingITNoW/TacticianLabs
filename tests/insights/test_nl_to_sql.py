@@ -7,6 +7,7 @@ import pytest
 from google.genai import types
 from google.api_core import exceptions
 
+from ai_tools.gold_projection import Augment
 from insights import nl_to_sql, prompt
 
 PROJECT = "test-project"
@@ -378,3 +379,152 @@ def test_instructions_make_the_agent_ask_for_the_level_and_leave_the_chart_to_th
     assert "ask for it" in prompt.INSTRUCTIONS
     assert "do not describe or draw a chart yourself" in prompt.INSTRUCTIONS
     assert "roll_odds" in prompt.EXAMPLES
+
+
+MASTERLIST = {
+    "Pot of Gold": Augment("Pot of Gold", gold=8),
+    "Cruel Pact": Augment("Cruel Pact", free_rolls=1, max_interest=2),
+}
+
+
+@pytest.fixture
+def masterlist(monkeypatch):
+    monkeypatch.setattr(nl_to_sql, "augment_masterlist", lambda: MASTERLIST)
+
+
+def projection(answer, end_round="4-2", augments=None, **start):
+    args = {
+        "start_round": None,
+        "start_level": None,
+        "start_xp": None,
+        "start_gold": None,
+        "start_streak": None,
+        **start,
+    }
+    return nl_to_sql.run_gold_projection(end_round, augments, answer=answer, **args)
+
+
+def gold_projection_call(**args):
+    call = SimpleNamespace(name="gold_projection", args=args)
+    content = types.Content(role="model", parts=[types.Part(text="calling")])
+    return SimpleNamespace(
+        function_calls=[call],
+        text=None,
+        candidates=[SimpleNamespace(content=content)],
+        usage_metadata=usage(100, 5, 105),
+    )
+
+
+def test_gold_projection_defaults_to_4_2_and_records_the_run(masterlist):
+    answer = nl_to_sql.Answer(text="")
+
+    result = projection(answer)
+
+    assert result["end_round"] == "4-2" and result["start"]["round"] == "2-1"
+    assert set(result["scenarios"]) == {"win", "mixed", "loss"}
+    assert answer.gold_projection_runs[0].error is None
+    assert answer.gold_projection_runs[0].args["end_round"] == "4-2"
+
+
+def test_gold_projection_gives_the_series_to_the_page_and_not_to_the_model(masterlist):
+    answer = nl_to_sql.Answer(text="")
+
+    result = projection(answer, "3-2")
+
+    assert all("series" not in s for s in result["scenarios"].values())
+    [shown] = answer.gold_projections
+    assert shown["scenarios"]["win"]["series"][-1]["round"] == "3-2"
+    assert shown["scenarios"]["win"]["gold"] == result["scenarios"]["win"]["gold"]
+
+
+def test_gold_projection_finds_augments_by_name_and_slot(masterlist):
+    answer = nl_to_sql.Answer(text="")
+    pick = [{"name": "pot of gold", "slot": "2-1"}]
+
+    with_augment = projection(answer, "3-2", pick)
+    without = projection(answer, "3-2")
+
+    assert with_augment["augments"][0]["name"] == "Pot of Gold"
+    assert with_augment["augments"][0]["slot"] == "2-1"
+    assert with_augment["scenarios"]["win"]["gold"] > without["scenarios"]["win"]["gold"]
+
+
+def test_gold_projection_start_overrides_replace_the_defaults(masterlist):
+    answer = nl_to_sql.Answer(text="")
+
+    result = projection(
+        answer, "3-3", start_round="3-2", start_level=6, start_xp=1, start_gold=40, start_streak=2
+    )
+
+    assert result["start"] == {"round": "3-2", "level": 6, "xp": 1, "gold": 40, "streak": 2}
+
+
+def test_gold_projection_unknown_augment_lists_the_valid_names(masterlist):
+    answer = nl_to_sql.Answer(text="")
+
+    result = projection(answer, augments=[{"name": "Nope", "slot": "2-1"}])
+
+    assert "Nope" in result["error"] and "Cruel Pact, Pot of Gold" in result["error"]
+    assert answer.gold_projections == []
+    assert answer.gold_projection_runs[0].error == result["error"]
+
+
+def test_gold_projection_with_an_empty_masterlist_says_so(monkeypatch):
+    monkeypatch.setattr(nl_to_sql, "augment_masterlist", lambda: {})
+    answer = nl_to_sql.Answer(text="")
+
+    result = projection(answer, augments=[{"name": "Nope", "slot": "2-1"}])
+
+    assert "masterlist is empty" in result["error"]
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        dict(end_round="6-1"),
+        dict(end_round="soon"),
+        dict(augments=[{"name": "Pot of Gold", "slot": "3-3"}]),
+        dict(augments=[{"name": "Pot of Gold"}]),
+        dict(start_level=40),
+    ],
+)
+def test_gold_projection_refused_input_goes_back_to_the_model(masterlist, args):
+    answer = nl_to_sql.Answer(text="")
+
+    result = projection(answer, **args)
+
+    assert "error" in result
+    assert answer.gold_projections == [] and answer.gold_projection_runs[0].error
+
+
+def test_ask_dispatches_gold_projection_calls(agent_env, masterlist):
+    genai_client = FakeGenai(
+        [
+            gold_projection_call(
+                end_round="3-2", augments=[{"name": "Pot of Gold", "slot": "2-1"}]
+            ),
+            final(),
+        ]
+    )
+
+    answer = nl_to_sql.ask("gold?", client=FakeClient(rows=UNITS), genai_client=genai_client)
+
+    assert answer.text == "done"
+    assert len(answer.gold_projections) == 1 and len(answer.gold_projection_runs) == 1
+    assert answer.gold_projection_runs[0].error is None
+
+
+def test_ask_answers_bad_gold_projection_arguments_with_an_error(agent_env):
+    genai_client = FakeGenai([gold_projection_call(end_rnd="3-2"), final()])
+
+    answer = nl_to_sql.ask("q", client=FakeClient(rows=UNITS), genai_client=genai_client)
+
+    assert answer.gold_projection_runs == []
+
+
+def test_instructions_state_the_gold_projection_caveats_and_chain_it_with_roll_odds():
+    text = prompt.INSTRUCTIONS
+    assert "gold_projection" in text and "gold_projection" in prompt.EXAMPLES
+    assert "ceiling" in text and "extremes" in text and "board units" in text
+    assert "both level 8 and level 9" in text
+    assert "do not describe or draw them yourself" in text

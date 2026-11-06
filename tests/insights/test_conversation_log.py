@@ -7,7 +7,7 @@ import pytest
 from google.api_core import exceptions
 
 from insights import conversation_log
-from insights.nl_to_sql import Answer, ModelCall, RollOddsRun, SqlRun
+from insights.nl_to_sql import Answer, GoldProjectionRun, ModelCall, RollOddsRun, SqlRun
 
 ID = "0b1f6a0e-6a4e-4c53-9d5b-1c2a3b4c5d6e"
 NAME = f"conversations/{ID}.json"
@@ -72,6 +72,8 @@ def test_turn_record_sums_every_model_call():
         roll_odds_runs=[
             RollOddsRun(args={"level": 8, "units": [{"name": "Ahri", "copies": 2}]}, latency_ms=3)
         ],
+        gold_projections=[{"end_round": "4-2", "scenarios": {"win": {"gold": 777}}}],
+        gold_projection_runs=[GoldProjectionRun(args={"end_round": "4-2"}, latency_ms=2)],
     )
 
     record = conversation_log.turn_record(
@@ -94,6 +96,10 @@ def test_turn_record_sums_every_model_call():
         {"args": {"level": 8, "units": [{"name": "Ahri", "copies": 2}]}, "latency_ms": 3, "error": None}
     ]
     assert "0.5" not in json.dumps(record)
+    assert record["gold_projection_runs"] == [
+        {"args": {"end_round": "4-2"}, "latency_ms": 2, "error": None}
+    ]
+    assert "777" not in json.dumps(record)
     assert len(record["model_calls"]) == 2
     assert record["started_at"] == "2026-10-19T00:00:00+00:00"
 

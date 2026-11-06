@@ -190,10 +190,51 @@ export interface RollOddsRun {
   curve: RollOddsRow[]
 }
 
+/** What a projection has at a round's planning phase, before spending; the totals run since the start */
+export interface GoldProjectionPoint {
+  round: string
+  gold: number
+  naturalXp: number
+  augmentXp: number
+  freeRolls: number
+}
+
+/** What reaching a level costs: the XP still missing, the gold that buys it, and what is left (negative is a shortfall) */
+export interface GoldProjectionLevel {
+  xpMissing: number
+  goldCost: number
+  leftover: number
+}
+
+export type StreakScenarioName = 'win' | 'mixed' | 'loss'
+
+export interface GoldProjectionScenario {
+  gold: number
+  naturalXp: number
+  augmentXp: number
+  freeRolls: number
+  /** The level the XP reaches by itself */
+  level: number
+  /** By target level, 8 and 9 */
+  levels: Record<string, GoldProjectionLevel>
+  /** One point per round from the start to the end round: what the charts draw */
+  series: GoldProjectionPoint[]
+}
+
+/** One gold_projection call the agent made: what it asked and what came back */
+export interface GoldProjectionRun {
+  endRound: string
+  start: { round: string; level: number; xp: number; gold: number; streak: number }
+  augments: { name: string; slot: string; gold: number; freeRolls: number; xpPerRound: number; maxInterest: number }[]
+  scenarios: Record<StreakScenarioName, GoldProjectionScenario>
+}
+
 export interface AgentAnswer {
   text: string
   /** The SQL the agent ran, in order */
   queries: string[]
   /** The roll odds the agent worked out, in order */
   rollOdds: RollOddsRun[]
+  /** The gold projections the agent worked out, in order */
+  goldProjections: GoldProjectionRun[]
 }
