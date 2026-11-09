@@ -78,11 +78,11 @@ What levels a player up: earned each Round, granted by augments, or bought with 
 _Avoid_: exp
 
 **Projection**:
-The gold, XP and Free Rolls a player can have by a Round, worked out for each Streak Scenario. Nothing is spent along the way, so the gold is a ceiling.
+The gold, XP and Free Rolls a player has by a Round under each Scenario; with nothing spent, the gold is a ceiling.
 
-**Streak Scenario**:
-One of three ways a Projection's fights go: win (every PvP fight won), loss (every one lost) or mixed (some of each, averaged).
-_Avoid_: line, path
+**Scenario**:
+One way a Projection's Rounds go: which PvP fights are won or lost, and what is spent or gained each Round. The presets are win (every fight won), loss (every one lost) and mixed (some of each, averaged), with nothing spent.
+_Avoid_: line, path, streak scenario
 
 **Conversation**:
 One /ask thread, from its first question until the visitor starts a new chat. Anonymous: it names no person.

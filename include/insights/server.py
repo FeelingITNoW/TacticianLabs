@@ -3,7 +3,7 @@
 POST /ask {"question": str, "history": [{"role": "user"|"model", "text": str}],
 "conversation_id": uuid, optional} returns {"text": str, "queries": [str], "roll_odds": [dict],
 "gold_projections": [dict]}: each roll_odds with the odds curve the page charts, and each gold
-projection with the series of every streak scenario. With a
+projection with the series of every scenario. With a
 conversation_id and ASK_LOG_BUCKET set, each turn (also a failed one) is appended to that
 conversation's log in Cloud Storage after the response is sent (see conversation_log).
 It is long-lived so the schema and

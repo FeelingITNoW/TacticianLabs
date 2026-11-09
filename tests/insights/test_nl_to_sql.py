@@ -401,6 +401,7 @@ def projection(answer, end_round="4-2", augments=None, **start):
         "start_streak": None,
         **start,
     }
+    args.setdefault("scenarios", None)
     return nl_to_sql.run_gold_projection(end_round, augments, answer=answer, **args)
 
 
@@ -421,7 +422,8 @@ def test_gold_projection_defaults_to_4_2_and_records_the_run(masterlist):
     result = projection(answer)
 
     assert result["end_round"] == "4-2" and result["start"]["round"] == "2-1"
-    assert set(result["scenarios"]) == {"win", "mixed", "loss"}
+    assert [s["preset"] for s in result["scenarios"]] == ["win", "mixed", "loss"]
+    assert all(s["ceiling"] for s in result["scenarios"])
     assert answer.gold_projection_runs[0].error is None
     assert answer.gold_projection_runs[0].args["end_round"] == "4-2"
 
@@ -431,10 +433,10 @@ def test_gold_projection_gives_the_series_to_the_page_and_not_to_the_model(maste
 
     result = projection(answer, "3-2")
 
-    assert all("series" not in s for s in result["scenarios"].values())
+    assert all("series" not in s for s in result["scenarios"])
     [shown] = answer.gold_projections
-    assert shown["scenarios"]["win"]["series"][-1]["round"] == "3-2"
-    assert shown["scenarios"]["win"]["gold"] == result["scenarios"]["win"]["gold"]
+    assert shown["scenarios"][0]["series"][-1]["round"] == "3-2"
+    assert shown["scenarios"][0]["gold"] == result["scenarios"][0]["gold"]
 
 
 def test_gold_projection_finds_augments_by_name_and_slot(masterlist):
@@ -446,7 +448,7 @@ def test_gold_projection_finds_augments_by_name_and_slot(masterlist):
 
     assert with_augment["augments"][0]["name"] == "Pot of Gold"
     assert with_augment["augments"][0]["slot"] == "2-1"
-    assert with_augment["scenarios"]["win"]["gold"] > without["scenarios"]["win"]["gold"]
+    assert with_augment["scenarios"][0]["gold"] > without["scenarios"][0]["gold"]
 
 
 def test_gold_projection_start_overrides_replace_the_defaults(masterlist):
@@ -528,3 +530,75 @@ def test_instructions_state_the_gold_projection_caveats_and_chain_it_with_roll_o
     assert "ceiling" in text and "extremes" in text and "board units" in text
     assert "both level 8 and level 9" in text
     assert "do not describe or draw them yourself" in text
+    assert "level_above" in text and "one letter per PvP fight" in text
+
+
+def custom_scenarios():
+    return [
+        {
+            "fights": "w" * 11,
+            "label": "Level on curve",
+            "gold": [{"round": "2-2", "gold": 0}],
+            "levels": [{"round": "2-1", "level": 4}],
+        },
+        {"fights": "l" * 11, "level_above": 50},
+    ]
+
+
+def test_gold_projection_runs_custom_scenarios_and_lets_the_fights_set_the_end_round(masterlist):
+    answer = nl_to_sql.Answer(text="")
+
+    result = projection(answer, None, scenarios=custom_scenarios())
+
+    assert result["end_round"] == "4-2"
+    assert [s["label"] for s in result["scenarios"]] == ["Level on curve", "Custom 2"]
+    assert all("series" not in s for s in result["scenarios"])
+    assert answer.gold_projection_runs[0].args["scenarios"] == custom_scenarios()
+
+
+def test_gold_projection_turns_the_moves_into_rounds_and_amounts(masterlist):
+    answer = nl_to_sql.Answer(text="")
+    scenarios = [
+        {
+            "fights": "win",
+            "gold": [{"round": "2-1", "gold": -3}, {"round": "2-2", "gold": 12}],
+            "levels": [{"round": "2-5", "level": 5}],
+            "level_above": 30,
+        }
+    ]
+
+    projection(answer, "2-6", scenarios=scenarios)
+
+    [shown] = answer.gold_projections
+    points = {p["round"]: p for p in shown["scenarios"][0]["series"]}
+    assert points["2-1"]["spent"] == 3 and points["2-2"]["gained"] == 12
+    assert points["2-5"]["leveling"] > 0
+
+
+@pytest.mark.parametrize(
+    "scenarios, message",
+    [
+        ([{"fights": "www"}, {"fights": "wwww"}], "different rounds"),
+        ([{"fights": "w" * 11, "gold": [{"round": "2-2", "gold": -500}]}], "needs 500 gold"),
+        ([{"fights": "w" * 11, "gold": [{"round": "2-2", "gold": -1}] * 2}], "more than once"),
+        ([{"fights": "w" * 11, "gold": [{"round": "soon", "gold": -1}]}], "round must look like"),
+        ([{"label": "no fights"}], "fights"),
+        ([{"fights": "win"}] * 4, "at most 3"),
+    ],
+)
+def test_gold_projection_bad_scenarios_go_back_to_the_model(masterlist, scenarios, message):
+    answer = nl_to_sql.Answer(text="")
+
+    result = projection(answer, None, scenarios=scenarios)
+
+    assert message in result["error"]
+    assert answer.gold_projections == [] and answer.gold_projection_runs[0].error
+
+
+def test_ask_dispatches_custom_gold_projection_scenarios(agent_env, masterlist):
+    genai_client = FakeGenai([gold_projection_call(scenarios=custom_scenarios()), final()])
+
+    answer = nl_to_sql.ask("plan?", client=FakeClient(rows=UNITS), genai_client=genai_client)
+
+    assert len(answer.gold_projections) == 1
+    assert answer.gold_projection_runs[0].error is None

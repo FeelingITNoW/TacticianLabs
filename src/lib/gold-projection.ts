@@ -1,20 +1,14 @@
-import type { GoldProjectionPoint, GoldProjectionRun, StreakScenarioName } from '@/data/types'
+import type { GoldProjectionPoint, GoldProjectionRun, GoldProjectionScenario } from '@/data/types'
 
 /**
- * The three Streak Scenarios, in the order the tables and charts list them, each with its own
- * hue; their Free Rolls are a lighter step of it, so they read as part of the same gold
+ * What each Scenario is drawn in, by its position in the call, so a scenario keeps its colour
+ * however many there are; their Free Rolls are a lighter step of it, so they read as part of
+ * the same gold
  */
-export const SCENARIOS: {
-  key: StreakScenarioName
-  label: string
-  fill: string
-  swatch: string
-  rollFill: string
-  rollSwatch: string
-}[] = [
-  { key: 'win', label: 'Win streak', fill: 'fill-series-1', swatch: 'bg-series-1', rollFill: 'fill-series-1/40', rollSwatch: 'bg-series-1/40' },
-  { key: 'mixed', label: 'Mixed', fill: 'fill-series-2', swatch: 'bg-series-2', rollFill: 'fill-series-2/40', rollSwatch: 'bg-series-2/40' },
-  { key: 'loss', label: 'Loss streak', fill: 'fill-series-3', swatch: 'bg-series-3', rollFill: 'fill-series-3/40', rollSwatch: 'bg-series-3/40' },
+export const SCENARIO_STYLES = [
+  { fill: 'fill-series-1', swatch: 'bg-series-1', rollFill: 'fill-series-1/40', rollSwatch: 'bg-series-1/40' },
+  { fill: 'fill-series-2', swatch: 'bg-series-2', rollFill: 'fill-series-2/40', rollSwatch: 'bg-series-2/40' },
+  { fill: 'fill-series-3', swatch: 'bg-series-3', rollFill: 'fill-series-3/40', rollSwatch: 'bg-series-3/40' },
 ]
 
 /** What a Free Roll is worth: what a roll costs (ROLL_COST in ai_tools/roll_odds.py) */
@@ -44,11 +38,28 @@ export function leftoverText(leftover: number): string {
   return leftover < 0 ? `short ${-leftover}` : String(leftover)
 }
 
+/** What a Scenario did in a round, as text: gold gained, spent on units and spent on XP */
+export function movesText(point: GoldProjectionPoint): string {
+  const moves = [
+    point.gained > 0 && `+${amount(point.gained)} gained`,
+    point.spent > 0 && `-${amount(point.spent)} units`,
+    point.leveling > 0 && `-${amount(point.leveling)} XP`,
+  ].filter(Boolean)
+  return moves.length > 0 ? moves.join(', ') : '-'
+}
+
+/** Whether every Scenario has the same XP in every round, so one XP chart serves them all */
+export function sameXp(scenarios: GoldProjectionScenario[]): boolean {
+  const xp = (s: GoldProjectionScenario) => JSON.stringify(s.series.map((p) => [p.naturalXp, p.augmentXp, p.boughtXp]))
+  return scenarios.every((s) => xp(s) === xp(scenarios[0]))
+}
+
 /** One run per distinct question, in the order first asked: the same call twice has the same chart */
 export function distinctGoldProjections(runs: GoldProjectionRun[]): GoldProjectionRun[] {
   const seen = new Map<string, GoldProjectionRun>()
   for (const run of runs) {
-    const key = JSON.stringify([run.endRound, run.start, run.augments])
+    const scenarios = run.scenarios.map((s) => [s.label, s.fights, s.series.map((p) => [p.gold, p.boughtXp])])
+    const key = JSON.stringify([run.endRound, run.start, run.augments, scenarios])
     if (!seen.has(key)) seen.set(key, run)
   }
   return [...seen.values()]

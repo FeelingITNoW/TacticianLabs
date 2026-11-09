@@ -102,6 +102,25 @@ class AugmentChoice(BaseModel):
     slot: str
 
 
+# Lists of these rather than maps from round to amount, which Gemini's tool schema can't describe
+class GoldMove(BaseModel):
+    round: str
+    gold: int
+
+
+class LevelMove(BaseModel):
+    round: str
+    level: int
+
+
+class ScenarioChoice(BaseModel):
+    fights: str
+    label: str | None = None
+    gold: list[GoldMove] = []
+    levels: list[LevelMove] = []
+    level_above: int | None = None
+
+
 @dataclass
 class Answer:
     text: str
@@ -329,6 +348,7 @@ def _augment_masterlist() -> dict[str, gold_projection_calculator.Augment]:
 def run_gold_projection(
     end_round: str | None,
     augments: list | None,
+    scenarios: list | None,
     start_round: str | None,
     start_level: int | None,
     start_xp: int | None,
@@ -346,6 +366,7 @@ def run_gold_projection(
         args={
             "end_round": end_round,
             "augments": augments,
+            "scenarios": scenarios,
             "start_round": start_round,
             "start_level": start_level,
             "start_xp": start_xp,
@@ -356,15 +377,22 @@ def run_gold_projection(
     started = time.perf_counter()
     try:
         full = _gold_projection(
-            end_round, augments, start_round, start_level, start_xp, start_gold, start_streak
+            end_round,
+            augments,
+            scenarios,
+            start_round,
+            start_level,
+            start_xp,
+            start_gold,
+            start_streak,
         )
         answer.gold_projections.append(full)
         result = {
             **full,
-            "scenarios": {
-                name: {key: value for key, value in scenario.items() if key != "series"}
-                for name, scenario in full["scenarios"].items()
-            },
+            "scenarios": [
+                {key: value for key, value in scenario.items() if key != "series"}
+                for scenario in full["scenarios"]
+            ],
         }
     except ValueError as exc:  # pydantic's ValidationError is one too
         run.error = str(exc)
@@ -374,8 +402,29 @@ def run_gold_projection(
     return result
 
 
+def _scenario_plan(choice: ScenarioChoice) -> gold_projection_calculator.ScenarioPlan:
+    parse_round = gold_projection_calculator.parse_round
+
+    def by_round(moves: list, name: str) -> dict:
+        result = {}
+        for move in moves:
+            rnd = parse_round(move.round)
+            if rnd in result:
+                raise ValueError(f"{name} has round {move.round} more than once")
+            result[rnd] = move.gold if name == "gold" else move.level
+        return result
+
+    return gold_projection_calculator.ScenarioPlan(
+        fights=choice.fights,
+        label=choice.label,
+        gold=by_round(choice.gold, "gold"),
+        levels=by_round(choice.levels, "levels"),
+        level_above=choice.level_above,
+    )
+
+
 def _gold_projection(
-    end_round, augments, start_round, start_level, start_xp, start_gold, start_streak
+    end_round, augments, scenarios, start_round, start_level, start_xp, start_gold, start_streak
 ) -> dict:
     calculator = gold_projection_calculator
     choices = [AugmentChoice.model_validate(a) for a in augments or []]
@@ -399,8 +448,9 @@ def _gold_projection(
         gold=rules.start_gold if start_gold is None else start_gold,
         streak=start_streak or 0,
     )
+    plans = [_scenario_plan(ScenarioChoice.model_validate(c)) for c in scenarios or []]
     result = calculator.calculate_gold_projection(
-        end_round or calculator.DEFAULT_END, picks, start
+        end_round, picks, start, scenarios=plans or None
     )
     result["augments"] = [
         {"slot": calculator.name_round(p.slot), **vars(p.augment)} for p in picks
@@ -485,30 +535,45 @@ def _ask(
         return run_roll_odds(client, level, units, tier_out, gold, answer)
 
     def gold_projection(
-        end_round: str = gold_projection_calculator.DEFAULT_END,
+        end_round: str | None = None,
         augments: list[AugmentChoice] | None = None,
+        scenarios: list[ScenarioChoice] | None = None,
         start_round: str | None = None,
         start_level: int | None = None,
         start_xp: int | None = None,
         start_gold: int | None = None,
         start_streak: int | None = None,
     ) -> dict:
-        """Gold, XP and Free Rolls a player has by a round, as win, mixed and loss streak scenarios.
+        """Gold, XP and Free Rolls a player has by a round, for up to three scenarios.
 
-        end_round: a round from 2-2 to 5-2 (default 4-2); the figures are what can be spent in
-        its planning phase, before its fight. augments: each augment by masterlist name and the
-        slot it was taken at (2-1, 3-2 or 4-2), at most one per slot. start_round (default 2-1),
-        start_level, start_xp, start_gold and start_streak (positive wins in a row, negative
-        losses) only when the user gave them. Nothing is spent along the way, so the gold is a
-        ceiling. Returns per scenario the gold, free_rolls, free_roll_gold (2 gold a Free Roll),
-        total_gold (gold plus free_roll_gold), natural_xp, augment_xp, the level the XP reaches,
-        and for levels 8 and 9 the xp_missing, gold_cost (4-gold purchases) and leftover to roll
-        with (Free Rolls included; negative is a shortfall of gold), plus one level_curve of every level from the start's
-        to 9 (xp, total_xp, reached_at, xp_missing, gold_cost), or {"error": ...}.
+        end_round: a round from 2-2 to 5-2; the figures are what the player holds in its
+        planning phase, before its fight. Leave it out (default 4-2) to let a scenario's fights
+        set it. augments: each augment by masterlist name and the slot it was taken at (2-1, 3-2
+        or 4-2), at most one per slot. scenarios: leave out for the win, mixed and loss presets
+        with nothing spent (their gold is a ceiling). Otherwise up to three, each with fights
+        (win, mixed, loss, or a string of w and l with one letter per PvP fight from the start
+        round, carousels and neutrals skipped, and not the end round's own fight: 11 letters
+        reach 4-2, 15 reach 4-7), a label, gold (a list of {round, gold}: negative is gold spent
+        on units, positive gold gained that the augments don't give), levels (a list of {round,
+        level}: the level to be at after that round's gold, the tool buys the XP) and
+        level_above (spend every spare 4 gold over this amount on XP each round). Every round
+        pays its income, then its gold, then its level, then level_above. A scenario that
+        spends more than it holds returns an error with the balances. start_round (default
+        2-1), start_level, start_xp, start_gold and start_streak (positive wins in a row,
+        negative losses) only when the user gave them. Returns end_round and per scenario its
+        label, fights, ceiling (true when nothing is spent), the gold held after the end
+        round's spending, free_rolls, free_roll_gold (2 gold a Free Roll), total_gold (gold plus
+        free_roll_gold), natural_xp, augment_xp, bought_xp, spent (on units), gained, leveling
+        (gold spent on XP), the level reached, for levels 8 and 9 the xp_missing, gold_cost
+        (4-gold purchases, from the XP held then; level 9 includes level 8) and leftover to roll
+        with (Free Rolls included; negative is a shortfall of gold), and a level_curve of every
+        level from the start's to 9 (xp, total_xp, reached_at, xp_missing, gold_cost), or
+        {"error": ...}.
         """
         return run_gold_projection(
             end_round,
             augments,
+            scenarios,
             start_round,
             start_level,
             start_xp,

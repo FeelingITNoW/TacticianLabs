@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
-import type { GoldProjectionCurveLevel, GoldProjectionPoint, GoldProjectionRun } from '@/data/types'
-import { amount, describeGoldProjection, LEVEL_TARGETS, leftoverText, ROLL_COST, ROUND_MARK, SCENARIOS } from '@/lib/gold-projection'
+import type { GoldProjectionCurveLevel, GoldProjectionPoint, GoldProjectionRun, GoldProjectionScenario } from '@/data/types'
+import {
+  amount,
+  describeGoldProjection,
+  LEVEL_TARGETS,
+  leftoverText,
+  movesText,
+  ROLL_COST,
+  ROUND_MARK,
+  SCENARIO_STYLES,
+  sameXp,
+} from '@/lib/gold-projection'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 // A round's slot is wide enough for its total and its name; narrower screens scroll sideways
@@ -234,8 +244,9 @@ function LegendKey({ swatch, label }: { swatch: string; label: string }) {
 }
 
 function goldBars(series: GoldProjectionPoint[], fill: string, rollFill: string): Bar[] {
-  return series.map((point) => {
+  return series.map((point, i) => {
     const { interest, passive, reward, augment } = point.income
+    const bought = point.boughtXp - (series[i - 1]?.boughtXp ?? 0)
     return {
       round: point.round,
       mark: ROUND_MARK[point.kind],
@@ -244,26 +255,31 @@ function goldBars(series: GoldProjectionPoint[], fill: string, rollFill: string)
         { value: point.freeRollGold, fill: rollFill },
       ],
       details: [
-        { label: 'Total', value: amount(point.totalGold) },
+        { label: 'Total held', value: amount(point.totalGold) },
         ...(point.freeRolls > 0
           ? [
               { label: 'Gold', value: amount(point.gold) },
               { label: `${point.freeRolls} Free Rolls`, value: amount(point.freeRollGold) },
             ]
           : []),
-        { label: 'Gold this round', value: `+${amount(interest + passive + reward + augment)}` },
+        { label: 'Income this round', value: `+${amount(interest + passive + reward + augment)}` },
         { label: 'Interest', value: amount(interest) },
         { label: 'Passive', value: amount(passive) },
         { label: "Last round's reward", value: amount(reward) },
         ...(augment > 0 ? [{ label: 'Augment', value: amount(augment) }] : []),
+        ...(point.gained > 0 ? [{ label: 'Gained', value: `+${amount(point.gained)}` }] : []),
+        ...(point.spent > 0 ? [{ label: 'Spent on units', value: `-${amount(point.spent)}` }] : []),
+        ...(point.leveling > 0
+          ? [{ label: 'Spent on XP', value: `-${amount(point.leveling)} (+${bought} XP)` }]
+          : []),
       ],
     }
   })
 }
 
-function xpBars(series: GoldProjectionPoint[], curve: GoldProjectionCurveLevel[]): Bar[] {
+function xpBars(series: GoldProjectionPoint[], curve: GoldProjectionCurveLevel[], boughtFill: string): Bar[] {
   return series.map((point) => {
-    const total = point.naturalXp + point.augmentXp
+    const total = point.naturalXp + point.augmentXp + point.boughtXp
     const next = curve.find((row) => row.totalXp > total)
     return {
       round: point.round,
@@ -271,11 +287,13 @@ function xpBars(series: GoldProjectionPoint[], curve: GoldProjectionCurveLevel[]
       segments: [
         { value: point.naturalXp, fill: 'fill-muted-foreground' },
         { value: point.augmentXp, fill: 'fill-primary' },
+        { value: point.boughtXp, fill: boughtFill },
       ],
       details: [
-        { label: 'XP earned', value: String(total) },
+        { label: 'XP held', value: String(total) },
         { label: 'Natural', value: String(point.naturalXp) },
         ...(point.augmentXp > 0 ? [{ label: 'From augments', value: String(point.augmentXp) }] : []),
+        ...(point.boughtXp > 0 ? [{ label: 'Bought', value: String(point.boughtXp) }] : []),
         { label: 'Level', value: String(point.level) },
         ...(next ? [{ label: `To level ${next.level}`, value: `${next.totalXp - total} XP` }] : []),
       ],
@@ -283,9 +301,12 @@ function xpBars(series: GoldProjectionPoint[], curve: GoldProjectionCurveLevel[]
   })
 }
 
+const earnedXp = (scenario: GoldProjectionScenario) => scenario.naturalXp + scenario.augmentXp + scenario.boughtXp
+
 /** Every round's numbers as text, for reading across the scenarios and for screen readers */
 function RoundsTable({ run }: { run: GoldProjectionRun }) {
-  const { win, mixed, loss } = run.scenarios
+  const { scenarios } = run
+  const augmentXp = scenarios[0].augmentXp > 0
   return (
     <details className="text-xs">
       <summary className="cursor-pointer text-muted-foreground">Every round as a table</summary>
@@ -294,30 +315,39 @@ function RoundsTable({ run }: { run: GoldProjectionRun }) {
           <TableHeader>
             <TableRow>
               <TableHead>Round</TableHead>
-              {SCENARIOS.map(({ key, label }) => (
-                <TableHead key={key} className="text-right">
-                  {label}
-                </TableHead>
-              ))}
-              <TableHead className="text-right">Natural XP</TableHead>
-              <TableHead className="text-right">Augment XP</TableHead>
-              <TableHead className="text-right">Level</TableHead>
-              <TableHead className="text-right">Free Roll gold</TableHead>
+              {scenarios.flatMap((scenario) => [
+                <TableHead key={`${scenario.label}-gold`} className="text-right">
+                  {scenario.label}: gold
+                </TableHead>,
+                <TableHead key={`${scenario.label}-moves`}>Moves</TableHead>,
+                <TableHead key={`${scenario.label}-level`} className="text-right">
+                  Level
+                </TableHead>,
+              ])}
+              {augmentXp && <TableHead className="text-right">Augment XP</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {win.series.map((point, i) => (
+            {scenarios[0].series.map((point, i) => (
               <TableRow key={point.round}>
                 <TableCell>
                   {point.round} {point.kind !== 'pvp' && <span className="text-muted-foreground">{point.kind}</span>}
                 </TableCell>
-                <TableCell className="text-right tabular-nums">{point.gold}</TableCell>
-                <TableCell className="text-right tabular-nums">{mixed.series[i].gold}</TableCell>
-                <TableCell className="text-right tabular-nums">{loss.series[i].gold}</TableCell>
-                <TableCell className="text-right tabular-nums">{point.naturalXp}</TableCell>
-                <TableCell className="text-right tabular-nums">{point.augmentXp}</TableCell>
-                <TableCell className="text-right tabular-nums">{point.level}</TableCell>
-                <TableCell className="text-right tabular-nums">{point.freeRollGold}</TableCell>
+                {scenarios.flatMap((scenario) => {
+                  const at = scenario.series[i]
+                  return [
+                    <TableCell key={`${scenario.label}-gold`} className="text-right tabular-nums">
+                      {at.gold}
+                    </TableCell>,
+                    <TableCell key={`${scenario.label}-moves`} className="text-muted-foreground">
+                      {movesText(at)}
+                    </TableCell>,
+                    <TableCell key={`${scenario.label}-level`} className="text-right tabular-nums">
+                      {at.level}
+                    </TableCell>,
+                  ]
+                })}
+                {augmentXp && <TableCell className="text-right tabular-nums">{point.augmentXp}</TableCell>}
               </TableRow>
             ))}
           </TableBody>
@@ -327,84 +357,130 @@ function RoundsTable({ run }: { run: GoldProjectionRun }) {
   )
 }
 
+/** The XP-level table of each distinct curve: what is missing and costs depends on the XP the scenario bought */
+function curveGroups(scenarios: GoldProjectionScenario[]) {
+  const groups = new Map<string, { labels: string[]; curve: GoldProjectionCurveLevel[] }>()
+  for (const scenario of scenarios) {
+    const key = JSON.stringify(scenario.levelCurve)
+    const group = groups.get(key) ?? { labels: [], curve: scenario.levelCurve }
+    group.labels.push(scenario.label)
+    groups.set(key, group)
+  }
+  return [...groups.values()]
+}
+
 /**
- * One gold_projection call: a bar chart of the gold by round for each Streak Scenario, on one
+ * One gold_projection call: a bar chart of the gold held by round for each Scenario, on one
  * scale so they compare, with the Free Rolls stacked on as the gold they're worth, then the XP
- * against every level's threshold (the same in every scenario, since only gold depends on the
- * fights), then what levels 8 and 9 cost against what is left and the whole XP curve.
+ * (natural, from augments and bought) against every level's threshold, then what levels 8 and 9
+ * cost against what is left and the whole XP curve.
  */
 export function GoldProjectionCharts({ run }: { run: GoldProjectionRun }) {
-  const { win } = run.scenarios
-  const end = win.series[win.series.length - 1]
-  const earnedXp = end.naturalXp + end.augmentXp
-  const goldMax = Math.max(...SCENARIOS.flatMap(({ key }) => run.scenarios[key].series.map((point) => point.totalGold)))
-  const rollsFrom = win.series.find((point) => point.freeRolls > 0)?.round
-  const curve = run.levelCurve
-  const xpMax = Math.max(earnedXp, curve[curve.length - 1]?.totalXp ?? 0)
-  const firstLevel = run.start.level
+  const { scenarios } = run
+  const first = scenarios[0]
+  const freeRolls = first.freeRolls
+  const rollsFrom = first.series.find((point) => point.freeRolls > 0)?.round
+  const allCeiling = scenarios.every((scenario) => scenario.ceiling)
+  const anySpend = !allCeiling
+  const goldMax = Math.max(...scenarios.flatMap((scenario) => scenario.series.map((point) => point.totalGold)))
+  const curve = first.levelCurve
+  const xpMax = Math.max(...scenarios.map(earnedXp), curve[curve.length - 1]?.totalXp ?? 0)
+  const shared = sameXp(scenarios)
+  const xpTitle = `XP earned against the level curve, from level ${run.start.level}`
+  const xpNote = (hasBought: boolean, swatch: string) => (
+    <>
+      <p>Each line is the XP a level takes; the level the XP reaches is under each round.</p>
+      {(first.augmentXp > 0 || hasBought) && (
+        <p className="mt-1 flex flex-wrap gap-x-4">
+          <LegendKey swatch="bg-muted-foreground" label="Natural XP" />
+          {first.augmentXp > 0 && <LegendKey swatch="bg-primary" label="From augments" />}
+          {hasBought && <LegendKey swatch={swatch} label="Bought with gold" />}
+        </p>
+      )}
+    </>
+  )
+  const thresholds = curve.map((row) => ({
+    label: `Lv ${row.level}`,
+    value: row.totalXp,
+    strong: LEVEL_TARGETS.includes(String(row.level)),
+  }))
+  const groups = curveGroups(scenarios)
 
   return (
     <section className="space-y-5">
       <div>
         <p className="text-sm font-medium">{describeGoldProjection(run)}</p>
         <p className="text-xs text-muted-foreground">
-          What you can spend in each round&rsquo;s planning phase, before its fight. Nothing is spent on the way, so the gold is
-          a ceiling, and win and loss streaks are the extremes, not forecasts. Car is a carousel, Neu neutrals.
+          {allCeiling
+            ? 'What you can spend in each round’s planning phase, before its fight. Nothing is spent on the way, so the gold is a ceiling, and win and loss streaks are the extremes, not forecasts.'
+            : `What each scenario holds in each round’s planning phase, after that round’s own spending.${
+                scenarios.some((scenario) => scenario.ceiling) ? ' A scenario that spends nothing is a ceiling.' : ''
+              } Win and loss streaks are the extremes, not forecasts.`}{' '}
+          Car is a carousel, Neu neutrals.
         </p>
-        {end.freeRolls > 0 && (
+        {freeRolls > 0 && (
           <p className="mt-1 text-xs font-medium">
-            The gold includes {end.freeRollGold} gold of Free Rolls: {end.freeRolls} at {ROLL_COST} gold a roll, from {rollsFrom}.
+            The gold includes {first.freeRollGold} gold of Free Rolls: {freeRolls} at {ROLL_COST} gold a roll, from {rollsFrom}.
             They roll like gold but can&rsquo;t buy XP.
           </p>
         )}
       </div>
-      {SCENARIOS.map(({ key, label, fill, swatch, rollFill, rollSwatch }) => (
+      {scenarios.map((scenario, i) => {
+        const style = SCENARIO_STYLES[i]
+        return (
+          <RoundBars
+            key={i}
+            title={`Gold: ${scenario.label}`}
+            note={
+              (freeRolls > 0 || scenario.fights) && (
+                <>
+                  {scenario.fights && <p className="break-all font-mono">Fights: {scenario.fights}</p>}
+                  {freeRolls > 0 && (
+                    <p className="flex flex-wrap gap-x-4">
+                      <LegendKey swatch={style.swatch} label="Gold" />
+                      <LegendKey swatch={style.rollSwatch} label={`Free Rolls, ${ROLL_COST} gold each`} />
+                    </p>
+                  )}
+                </>
+              )
+            }
+            height={260}
+            yMax={goldMax}
+            bars={goldBars(scenario.series, style.fill, style.rollFill)}
+          />
+        )
+      })}
+      {shared ? (
         <RoundBars
-          key={key}
-          title={`Gold: ${label.toLowerCase()}`}
-          note={
-            end.freeRolls > 0 && (
-              <p className="flex flex-wrap gap-x-4">
-                <LegendKey swatch={swatch} label="Gold" />
-                <LegendKey swatch={rollSwatch} label={`Free Rolls, ${ROLL_COST} gold each`} />
-              </p>
-            )
-          }
-          height={260}
-          yMax={goldMax}
-          bars={goldBars(run.scenarios[key].series, fill, rollFill)}
+          title={xpTitle}
+          note={xpNote(first.boughtXp > 0, 'bg-foreground/70')}
+          height={420}
+          yMax={xpMax}
+          bars={xpBars(first.series, curve, 'fill-foreground/70')}
+          thresholds={thresholds}
         />
-      ))}
-      <RoundBars
-        title={`XP earned against the level curve, from level ${firstLevel}`}
-        note={
-          <>
-            <p>Each line is the XP a level takes; the level the XP reaches by itself is under each round.</p>
-            {win.augmentXp > 0 && (
-              <p className="mt-1 flex flex-wrap gap-x-4">
-                <LegendKey swatch="bg-muted-foreground" label="Natural XP" />
-                <LegendKey swatch="bg-primary" label="From augments" />
-              </p>
-            )}
-          </>
-        }
-        height={420}
-        yMax={xpMax}
-        bars={xpBars(win.series, curve)}
-        thresholds={curve.map((row) => ({
-          label: `Lv ${row.level}`,
-          value: row.totalXp,
-          strong: LEVEL_TARGETS.includes(String(row.level)),
-        }))}
-      />
+      ) : (
+        scenarios.map((scenario, i) => (
+          <RoundBars
+            key={i}
+            title={`${xpTitle}: ${scenario.label}`}
+            note={xpNote(scenario.boughtXp > 0, SCENARIO_STYLES[i].swatch)}
+            height={420}
+            yMax={xpMax}
+            bars={xpBars(scenario.series, curve, SCENARIO_STYLES[i].fill)}
+            thresholds={thresholds}
+          />
+        ))
+      )}
 
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Streak</TableHead>
+              <TableHead>Scenario</TableHead>
+              <TableHead className="text-right">Level</TableHead>
               <TableHead className="text-right">Gold at {run.endRound}</TableHead>
-              {end.freeRolls > 0 && <TableHead className="text-right">Of which Free Rolls</TableHead>}
+              {anySpend && <TableHead className="text-right">Spent</TableHead>}
               {LEVEL_TARGETS.flatMap((level) => [
                 <TableHead key={`${level}-cost`} className="text-right">
                   Level {level} cost
@@ -416,72 +492,75 @@ export function GoldProjectionCharts({ run }: { run: GoldProjectionRun }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {SCENARIOS.map(({ key, label, swatch }) => {
-              const scenario = run.scenarios[key]
-              return (
-                <TableRow key={key}>
-                  <TableCell>
-                    <LegendKey swatch={swatch} label={label} />
-                  </TableCell>
-                  <TableCell className="text-right font-medium tabular-nums">{scenario.totalGold}</TableCell>
-                  {end.freeRolls > 0 && <TableCell className="text-right tabular-nums">{scenario.freeRollGold}</TableCell>}
-                  {LEVEL_TARGETS.flatMap((level) => {
-                    const row = scenario.levels[level]
-                    return [
-                      <TableCell key={`${level}-cost`} className="text-right tabular-nums">
-                        {row.goldCost}
-                      </TableCell>,
-                      <TableCell
-                        key={`${level}-left`}
-                        className={`text-right tabular-nums ${row.leftover < 0 ? 'text-destructive' : 'font-medium'}`}
-                      >
-                        {leftoverText(row.leftover)}
-                      </TableCell>,
-                    ]
-                  })}
-                </TableRow>
-              )
-            })}
+            {scenarios.map((scenario, i) => (
+              <TableRow key={i}>
+                <TableCell>
+                  <LegendKey swatch={SCENARIO_STYLES[i].swatch} label={scenario.label} />
+                </TableCell>
+                <TableCell className="text-right tabular-nums">{scenario.level}</TableCell>
+                <TableCell className="text-right font-medium tabular-nums">{scenario.totalGold}</TableCell>
+                {anySpend && (
+                  <TableCell className="text-right tabular-nums">{amount(scenario.spent + scenario.leveling)}</TableCell>
+                )}
+                {LEVEL_TARGETS.flatMap((level) => {
+                  const row = scenario.levels[level]
+                  return [
+                    <TableCell key={`${level}-cost`} className="text-right tabular-nums">
+                      {row.goldCost}
+                    </TableCell>,
+                    <TableCell
+                      key={`${level}-left`}
+                      className={`text-right tabular-nums ${row.leftover < 0 ? 'text-destructive' : 'font-medium'}`}
+                    >
+                      {leftoverText(row.leftover)}
+                    </TableCell>,
+                  ]
+                })}
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
       </div>
 
-      {curve.length > 0 && (
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Level</TableHead>
-                <TableHead className="text-right">XP for the level</TableHead>
-                <TableHead className="text-right">XP from {run.start.round}</TableHead>
-                <TableHead className="text-right">Reached by itself</TableHead>
-                <TableHead className="text-right">XP missing at {run.endRound}</TableHead>
-                <TableHead className="text-right">Gold to buy it</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {curve.map((row) => (
-                <TableRow key={row.level} className={LEVEL_TARGETS.includes(String(row.level)) ? 'font-medium' : undefined}>
-                  <TableCell>{row.level}</TableCell>
-                  <TableCell className="text-right tabular-nums">{row.xp}</TableCell>
-                  <TableCell className="text-right tabular-nums">{row.totalXp}</TableCell>
-                  <TableCell className="text-right tabular-nums">{row.reachedAt ?? `not by ${run.endRound}`}</TableCell>
-                  <TableCell className="text-right tabular-nums">{row.xpMissing}</TableCell>
-                  <TableCell className="text-right tabular-nums">{row.goldCost}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+      {curve.length > 0 &&
+        groups.map(({ labels, curve: rows }) => (
+          <div key={labels.join()} className="space-y-1">
+            {groups.length > 1 && <p className="text-xs font-medium">{labels.join(', ')}</p>}
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Level</TableHead>
+                    <TableHead className="text-right">XP for the level</TableHead>
+                    <TableHead className="text-right">XP from {run.start.round}</TableHead>
+                    <TableHead className="text-right">Reached</TableHead>
+                    <TableHead className="text-right">XP missing at {run.endRound}</TableHead>
+                    <TableHead className="text-right">Gold to buy it</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((row) => (
+                    <TableRow key={row.level} className={LEVEL_TARGETS.includes(String(row.level)) ? 'font-medium' : undefined}>
+                      <TableCell>{row.level}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.xp}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.totalXp}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.reachedAt ?? `not by ${run.endRound}`}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.xpMissing}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.goldCost}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        ))}
 
       <p className="text-xs text-muted-foreground">
-        {earnedXp} XP earned by {run.endRound}
-        {win.augmentXp > 0 ? `, ${win.augmentXp} from augments` : ''}, which reaches level {win.level} by itself. The cost is the
-        gold that buys the rest, in 4-gold purchases.
-        {end.freeRolls > 0 &&
-          ` What is left after it counts the ${end.freeRollGold} gold of Free Rolls, which can still roll; a shortfall is in gold alone, since they can't buy XP.`}{' '}
-        Gold spent on board units is not taken off.
+        The cost is the gold that buys the XP still missing at {run.endRound} in 4-gold purchases, from the XP each scenario
+        holds then (natural, from augments and bought); level 9&rsquo;s cost already includes level 8&rsquo;s.
+        {freeRolls > 0 &&
+          ` What is left counts the ${first.freeRollGold} gold of Free Rolls, which can still roll; a shortfall is in gold alone, since they can't buy XP.`}{' '}
+        Gold spent on board units is not taken off, except what a scenario&rsquo;s own spending enters.
       </p>
       <RoundsTable run={run} />
     </section>
