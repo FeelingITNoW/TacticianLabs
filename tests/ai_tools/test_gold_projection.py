@@ -77,6 +77,27 @@ def test_interest_is_capped_and_an_augment_raises_the_cap():
     assert raised == capped + 2 * 2  # two planning phases at the higher cap
 
 
+def test_free_rolls_count_in_the_gold_at_what_a_roll_costs():
+    scenario = project("3-2", [pick((2, 1), free_rolls=3)])["win"]
+    assert scenario["free_roll_gold"] == 3 * 2
+    assert scenario["total_gold"] == scenario["gold"] + 6
+    assert scenario["gold"] == project("3-2")["win"]["gold"]  # they earn no interest
+    first = scenario["series"][0]
+    assert first["free_roll_gold"] == 6 and first["total_gold"] == first["gold"] + 6
+
+
+def test_free_rolls_are_left_over_to_roll_with_after_a_level():
+    scenario = project("4-2", [pick((2, 1), free_rolls=3)])["win"]
+    level_8 = scenario["levels"]["8"]
+    assert level_8["leftover"] == scenario["gold"] - level_8["gold_cost"] + 6
+
+
+def test_free_rolls_cannot_cover_a_shortfall_of_gold():
+    scenario = project("2-2", [pick((2, 1), free_rolls=50)])["loss"]
+    level_9 = scenario["levels"]["9"]
+    assert level_9["leftover"] == scenario["gold"] - level_9["gold_cost"] < 0
+
+
 def test_augment_gold_and_free_rolls_arrive_once_at_the_slot():
     scenario = project("3-2", [pick((2, 1), gold=10, free_rolls=2)])["loss"]
     plain = project("3-2")["loss"]
@@ -219,3 +240,88 @@ def test_a_target_the_gold_cannot_buy_shows_a_negative_leftover():
     early = project("2-2")["loss"]
     assert early["levels"]["9"]["leftover"] == early["gold"] - early["levels"]["9"]["gold_cost"]
     assert early["levels"]["9"]["leftover"] < 0
+
+
+def curve(end="4-2", augments=None, start=None):
+    start = start or Start(round=(2, 1), level=3, xp=0, gold=0)
+    return calculate_gold_projection(end, augments, start, RULES)["level_curve"]
+
+
+def test_a_player_arrives_at_2_1_on_level_3_by_default():
+    assert Start().level == 3
+    assert gold_projection.calculate_gold_projection()["start"]["level"] == 3
+
+
+def test_the_level_curve_runs_from_level_3_to_level_9():
+    rows = curve()
+    assert [row["level"] for row in rows] == [4, 5, 6, 7, 8, 9]
+    assert [row["xp"] for row in rows] == [6, 10, 20, 36, 48, 76]
+    assert [row["total_xp"] for row in rows] == [6, 16, 36, 72, 120, 196]
+
+
+def test_the_level_curve_says_when_the_xp_alone_reaches_a_level():
+    rows = {row["level"]: row for row in curve()}
+    # 2 XP a round: 6 XP is the 3rd round (2-3), 16 the 8th (3-1), 36 the 18th, after 4-2
+    assert rows[4]["reached_at"] == "2-3"
+    assert rows[5]["reached_at"] == "3-1"
+    assert rows[6]["reached_at"] is None
+
+
+def test_the_level_curve_prices_what_is_missing_at_the_end_round():
+    rows = {row["level"]: row for row in curve()}
+    # 32 XP by 4-2: level 5 with 16 towards level 6
+    assert rows[5]["xp_missing"] == 0 and rows[5]["gold_cost"] == 0
+    assert rows[6]["xp_missing"] == 4 and rows[6]["gold_cost"] == 4
+    assert rows[9]["xp_missing"] == 196 - 32
+    assert rows[9]["gold_cost"] == 164
+
+
+def test_the_level_curve_matches_the_scenarios_prices():
+    result = calculate_gold_projection("4-2", None, Start(), RULES)
+    rows = {row["level"]: row for row in result["level_curve"]}
+    for target in ("8", "9"):
+        level = result["scenarios"]["win"]["levels"][target]
+        assert rows[int(target)]["gold_cost"] == level["gold_cost"]
+        assert rows[int(target)]["xp_missing"] == level["xp_missing"]
+
+
+def test_the_level_curve_starts_from_the_start_and_counts_its_xp():
+    rows = curve(start=Start(round=(3, 2), level=6, xp=5, gold=0))
+    assert [row["level"] for row in rows] == [7, 8, 9]
+    assert rows[0]["total_xp"] == 36 - 5
+
+
+def test_the_level_curve_is_empty_from_the_last_target():
+    assert curve(start=Start(level=9)) == []
+
+
+def test_augment_xp_moves_the_level_curve():
+    rows = {r["level"]: r for r in curve(augments=[pick((2, 1), xp_per_round=4)])}
+    # 6 XP a round: level 4 at 2-1, and 16 XP by 2-3
+    assert rows[4]["reached_at"] == "2-1"
+    assert rows[5]["reached_at"] == "2-3"
+
+
+def test_every_round_says_its_kind_level_and_income():
+    series = project("3-1", start=Start(round=(2, 1), level=3, xp=0, gold=0))["win"]["series"]
+    assert [point["kind"] for point in series][:7] == [
+        "pvp", "pvp", "pvp", "carousel", "pvp", "pvp", "neutral"
+    ]
+    assert [point["level"] for point in series][:3] == [3, 3, 4]
+    assert series[2]["income"] == {"interest": 1, "passive": 5, "reward": 2, "augment": 0}
+    # neutrals at 2-7 pay at 3-1
+    assert series[7]["income"]["reward"] == 6
+
+
+def test_income_adds_up_to_the_change_in_gold():
+    series = project("4-2", [pick((3, 2), gold=10)])["win"]["series"]
+    for before, after in zip(series, series[1:]):
+        assert sum(after["income"].values()) == after["gold"] - before["gold"]
+
+
+def test_the_mixed_income_is_the_average_of_its_runs():
+    series = project("4-2")["mixed"]["series"]
+    # the first fight's reward is averaged over runs that won and lost it
+    assert 0 < series[1]["income"]["reward"] < 1
+    for before, after in zip(series, series[1:]):
+        assert abs(sum(after["income"].values()) - (after["gold"] - before["gold"])) <= 1

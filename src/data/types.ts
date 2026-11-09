@@ -193,13 +193,34 @@ export interface RollOddsRun {
 /** What a projection has at a round's planning phase, before spending; the totals run since the start */
 export interface GoldProjectionPoint {
   round: string
+  kind: 'pvp' | 'carousel' | 'neutral'
   gold: number
+  /** The Free Rolls at what a roll costs, and the gold with them */
+  freeRollGold: number
+  totalGold: number
   naturalXp: number
   augmentXp: number
   freeRolls: number
+  /** The level this round's XP reaches by itself */
+  level: number
+  /** What this round added to the gold, by source (averages, so maybe not whole, in the mixed scenario) */
+  income: { interest: number; passive: number; reward: number; augment: number }
 }
 
-/** What reaching a level costs: the XP still missing, the gold that buys it, and what is left (negative is a shortfall) */
+/** One step of the XP curve, the same in every Streak Scenario */
+export interface GoldProjectionCurveLevel {
+  level: number
+  /** XP from the level below */
+  xp: number
+  /** XP from the start of the projection */
+  totalXp: number
+  /** The round the XP alone reaches this level, if it does by the end round */
+  reachedAt: string | null
+  xpMissing: number
+  goldCost: number
+}
+
+/** What reaching a level costs: the XP still missing, the gold that buys it, and what is left to roll with, Free Rolls included (negative is a shortfall of gold) */
 export interface GoldProjectionLevel {
   xpMissing: number
   goldCost: number
@@ -210,6 +231,9 @@ export type StreakScenarioName = 'win' | 'mixed' | 'loss'
 
 export interface GoldProjectionScenario {
   gold: number
+  /** The Free Rolls at what a roll costs, and the gold with them */
+  freeRollGold: number
+  totalGold: number
   naturalXp: number
   augmentXp: number
   freeRolls: number
@@ -226,6 +250,8 @@ export interface GoldProjectionRun {
   endRound: string
   start: { round: string; level: number; xp: number; gold: number; streak: number }
   augments: { name: string; slot: string; gold: number; freeRolls: number; xpPerRound: number; maxInterest: number }[]
+  /** Every level from the start's to 9 */
+  levelCurve: GoldProjectionCurveLevel[]
   scenarios: Record<StreakScenarioName, GoldProjectionScenario>
 }
 

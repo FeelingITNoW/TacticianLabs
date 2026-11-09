@@ -89,14 +89,21 @@ function toRollOddsRow(row: RawRollOddsRow): RollOddsRow {
 
 interface RawGoldProjectionPoint {
   round: string
+  kind: GoldProjectionPoint['kind']
   gold: number
+  free_roll_gold: number
+  total_gold: number
   natural_xp: number
   augment_xp: number
   free_rolls: number
+  level: number
+  income: GoldProjectionPoint['income']
 }
 
 interface RawGoldProjectionScenario {
   gold: number
+  free_roll_gold: number
+  total_gold: number
   natural_xp: number
   augment_xp: number
   free_rolls: number
@@ -109,6 +116,14 @@ interface RawGoldProjection {
   end_round: string
   start: GoldProjectionRun['start']
   augments: { name: string; slot: string; gold: number; free_rolls: number; xp_per_round: number; max_interest: number }[]
+  level_curve: {
+    level: number
+    xp: number
+    total_xp: number
+    reached_at: string | null
+    xp_missing: number
+    gold_cost: number
+  }[]
   scenarios: Record<StreakScenarioName, RawGoldProjectionScenario>
 }
 
@@ -117,6 +132,8 @@ function toGoldProjection(run: RawGoldProjection): GoldProjectionRun {
     const raw = run.scenarios[name]
     return {
       gold: raw.gold,
+      freeRollGold: raw.free_roll_gold,
+      totalGold: raw.total_gold,
       naturalXp: raw.natural_xp,
       augmentXp: raw.augment_xp,
       freeRolls: raw.free_rolls,
@@ -141,6 +158,14 @@ function toGoldProjection(run: RawGoldProjection): GoldProjectionRun {
       xpPerRound: a.xp_per_round,
       maxInterest: a.max_interest,
     })),
+    levelCurve: run.level_curve.map((row) => ({
+      level: row.level,
+      xp: row.xp,
+      totalXp: row.total_xp,
+      reachedAt: row.reached_at,
+      xpMissing: row.xp_missing,
+      goldCost: row.gold_cost,
+    })),
     scenarios: { win: scenario('win'), mixed: scenario('mixed'), loss: scenario('loss') },
   }
 }
@@ -148,9 +173,14 @@ function toGoldProjection(run: RawGoldProjection): GoldProjectionRun {
 function toGoldProjectionPoint(point: RawGoldProjectionPoint): GoldProjectionPoint {
   return {
     round: point.round,
+    kind: point.kind,
     gold: point.gold,
+    freeRollGold: point.free_roll_gold,
+    totalGold: point.total_gold,
     naturalXp: point.natural_xp,
     augmentXp: point.augment_xp,
     freeRolls: point.free_rolls,
+    level: point.level,
+    income: point.income,
   }
 }

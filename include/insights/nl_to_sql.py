@@ -500,9 +500,11 @@ def _ask(
         slot it was taken at (2-1, 3-2 or 4-2), at most one per slot. start_round (default 2-1),
         start_level, start_xp, start_gold and start_streak (positive wins in a row, negative
         losses) only when the user gave them. Nothing is spent along the way, so the gold is a
-        ceiling. Returns per scenario the gold, natural_xp, augment_xp, free_rolls, the level the
-        XP reaches, and for levels 8 and 9 the xp_missing, gold_cost (4-gold purchases) and
-        leftover (negative is a shortfall), or {"error": ...}.
+        ceiling. Returns per scenario the gold, free_rolls, free_roll_gold (2 gold a Free Roll),
+        total_gold (gold plus free_roll_gold), natural_xp, augment_xp, the level the XP reaches,
+        and for levels 8 and 9 the xp_missing, gold_cost (4-gold purchases) and leftover to roll
+        with (Free Rolls included; negative is a shortfall of gold), plus one level_curve of every level from the start's
+        to 9 (xp, total_xp, reached_at, xp_missing, gold_cost), or {"error": ...}.
         """
         return run_gold_projection(
             end_round,
