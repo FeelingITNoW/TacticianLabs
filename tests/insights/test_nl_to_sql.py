@@ -530,7 +530,7 @@ def test_instructions_state_the_gold_projection_caveats_and_chain_it_with_roll_o
     assert "ceiling" in text and "extremes" in text and "board units" in text
     assert "both level 8 and level 9" in text
     assert "do not describe or draw them yourself" in text
-    assert "level_above" in text and "one letter per PvP fight" in text
+    assert "level_above" not in text and "one letter per PvP fight" in text
 
 
 def custom_scenarios():
@@ -541,7 +541,7 @@ def custom_scenarios():
             "gold": [{"round": "2-2", "gold": 0}],
             "levels": [{"round": "2-1", "level": 4}],
         },
-        {"fights": "l" * 11, "level_above": 50},
+        {"fights": "l" * 11, "levels": [{"round": "4-2", "level": 5}]},
     ]
 
 
@@ -563,7 +563,6 @@ def test_gold_projection_turns_the_moves_into_rounds_and_amounts(masterlist):
             "fights": "win",
             "gold": [{"round": "2-1", "gold": -3}, {"round": "2-2", "gold": 12}],
             "levels": [{"round": "2-5", "level": 5}],
-            "level_above": 30,
         }
     ]
 
@@ -584,6 +583,7 @@ def test_gold_projection_turns_the_moves_into_rounds_and_amounts(masterlist):
         ([{"fights": "w" * 11, "gold": [{"round": "soon", "gold": -1}]}], "round must look like"),
         ([{"label": "no fights"}], "fights"),
         ([{"fights": "win"}] * 4, "at most 3"),
+        ([{"fights": "win", "level_above": 50}], "level_above"),
     ],
 )
 def test_gold_projection_bad_scenarios_go_back_to_the_model(masterlist, scenarios, message):

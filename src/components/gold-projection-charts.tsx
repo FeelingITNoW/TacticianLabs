@@ -25,8 +25,8 @@ interface Bar {
   round: string
   /** A short mark under the round: what kind of round it is, or the level reached */
   mark: string
-  /** Stacked from the baseline; the total on the cap is their sum */
-  segments: { value: number; fill: string }[]
+  /** Stacked from the baseline; the total on the cap is the sum of the solid ones. An outlined segment is gold that was there and is gone */
+  segments: { value: number; fill: string; outline?: boolean; label?: string }[]
   /** The tooltip's rows */
   details: { label: string; value: string }[]
 }
@@ -82,7 +82,7 @@ function RoundBars({
   const y = (value: number) => baseline - (value / Math.max(yMax, 1)) * plotHeight
   const left = (i: number) => MARGIN.side + i * slot + (slot - barWidth) / 2
   const centre = (i: number) => MARGIN.side + (i + 0.5) * slot
-  const total = (bar: Bar) => bar.segments.reduce((sum, segment) => sum + segment.value, 0)
+  const total = (bar: Bar) => bar.segments.reduce((sum, segment) => sum + (segment.outline ? 0 : segment.value), 0)
 
   // Top down, so the targets at the top keep their labels if the low levels crowd each other
   const labelled: Threshold[] = []
@@ -167,12 +167,20 @@ function RoundBars({
                     const bottom = y(reached) - (s > 0 ? 2 : 0)
                     reached += segment.value
                     const isTop = s === filled.length - 1
+                    const top = Math.min(y(reached), bottom - 1)
                     return (
-                      <path
-                        key={s}
-                        d={column(left(i), Math.min(y(reached), bottom - 1), barWidth, bottom, isTop)}
-                        className={segment.fill}
-                      />
+                      <g key={s}>
+                        <path
+                          d={column(left(i), top, barWidth, bottom, isTop)}
+                          className={segment.outline ? 'fill-none stroke-muted-foreground' : segment.fill}
+                          strokeDasharray={segment.outline ? '3 2' : undefined}
+                        />
+                        {segment.outline && segment.label && bottom - top >= 14 && (
+                          <text x={centre(i)} y={(top + bottom) / 2 + 3.5} textAnchor="middle" className="fill-muted-foreground text-[10px] tabular-nums">
+                            {segment.label}
+                          </text>
+                        )}
+                      </g>
                     )
                   })}
                   <text
@@ -253,9 +261,10 @@ function goldBars(series: GoldProjectionPoint[], fill: string, rollFill: string)
       segments: [
         { value: point.gold, fill },
         { value: point.freeRollGold, fill: rollFill },
+        { value: point.spent + point.leveling, fill: '', outline: true, label: `\u2212${amount(point.spent + point.leveling)}` },
       ],
       details: [
-        { label: 'Total held', value: amount(point.totalGold) },
+        { label: 'Held after buying', value: amount(point.totalGold) },
         ...(point.freeRolls > 0
           ? [
               { label: 'Gold', value: amount(point.gold) },
@@ -317,7 +326,7 @@ function RoundsTable({ run }: { run: GoldProjectionRun }) {
               <TableHead>Round</TableHead>
               {scenarios.flatMap((scenario) => [
                 <TableHead key={`${scenario.label}-gold`} className="text-right">
-                  {scenario.label}: gold
+                  {scenario.label}: held
                 </TableHead>,
                 <TableHead key={`${scenario.label}-moves`}>Moves</TableHead>,
                 <TableHead key={`${scenario.label}-level`} className="text-right">
@@ -382,7 +391,10 @@ export function GoldProjectionCharts({ run }: { run: GoldProjectionRun }) {
   const rollsFrom = first.series.find((point) => point.freeRolls > 0)?.round
   const allCeiling = scenarios.every((scenario) => scenario.ceiling)
   const anySpend = !allCeiling
-  const goldMax = Math.max(...scenarios.flatMap((scenario) => scenario.series.map((point) => point.totalGold)))
+  // The whole stack, so what was there before spending fits
+  const goldMax = Math.max(
+    ...scenarios.flatMap((scenario) => scenario.series.map((point) => point.totalGold + point.spent + point.leveling)),
+  )
   const curve = first.levelCurve
   const xpMax = Math.max(...scenarios.map(earnedXp), curve[curve.length - 1]?.totalXp ?? 0)
   const shared = sameXp(scenarios)
@@ -412,8 +424,8 @@ export function GoldProjectionCharts({ run }: { run: GoldProjectionRun }) {
         <p className="text-sm font-medium">{describeGoldProjection(run)}</p>
         <p className="text-xs text-muted-foreground">
           {allCeiling
-            ? 'What you can spend in each round’s planning phase, before its fight. Nothing is spent on the way, so the gold is a ceiling, and win and loss streaks are the extremes, not forecasts.'
-            : `What each scenario holds in each round’s planning phase, after that round’s own spending.${
+            ? 'The bold number is the gold held after each round’s buying, before its fight. Nothing is spent on the way, so the gold is a ceiling, and win and loss streaks are the extremes, not forecasts.'
+            : `The bold number is the gold each scenario holds after each round’s buying, before its fight; the dashed outline is what that round spent.${
                 scenarios.some((scenario) => scenario.ceiling) ? ' A scenario that spends nothing is a ceiling.' : ''
               } Win and loss streaks are the extremes, not forecasts.`}{' '}
           Car is a carousel, Neu neutrals.
@@ -430,19 +442,18 @@ export function GoldProjectionCharts({ run }: { run: GoldProjectionRun }) {
         return (
           <RoundBars
             key={i}
-            title={`Gold: ${scenario.label}`}
+            title={`Gold held after buying: ${scenario.label}`}
             note={
-              (freeRolls > 0 || scenario.fights) && (
-                <>
-                  {scenario.fights && <p className="break-all font-mono">Fights: {scenario.fights}</p>}
-                  {freeRolls > 0 && (
-                    <p className="flex flex-wrap gap-x-4">
-                      <LegendKey swatch={style.swatch} label="Gold" />
-                      <LegendKey swatch={style.rollSwatch} label={`Free Rolls, ${ROLL_COST} gold each`} />
-                    </p>
+              <>
+                {scenario.fights && <p className="break-all font-mono">Fights: {scenario.fights}</p>}
+                <p className="flex flex-wrap gap-x-4">
+                  <LegendKey swatch={style.swatch} label="Held after buying" />
+                  {freeRolls > 0 && <LegendKey swatch={style.rollSwatch} label={`Free Rolls, ${ROLL_COST} gold each`} />}
+                  {scenario.spent + scenario.leveling > 0 && (
+                    <LegendKey swatch="border border-dashed border-muted-foreground" label="Spent this round" />
                   )}
-                </>
-              )
+                </p>
+              </>
             }
             height={260}
             yMax={goldMax}
@@ -479,7 +490,7 @@ export function GoldProjectionCharts({ run }: { run: GoldProjectionRun }) {
             <TableRow>
               <TableHead>Scenario</TableHead>
               <TableHead className="text-right">Level</TableHead>
-              <TableHead className="text-right">Gold at {run.endRound}</TableHead>
+              <TableHead className="text-right">Held at {run.endRound}</TableHead>
               {anySpend && <TableHead className="text-right">Spent</TableHead>}
               {LEVEL_TARGETS.flatMap((level) => [
                 <TableHead key={`${level}-cost`} className="text-right">

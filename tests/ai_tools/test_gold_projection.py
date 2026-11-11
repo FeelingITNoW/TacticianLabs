@@ -40,13 +40,12 @@ def project(end="4-2", augments=None, start=START, **kwargs):
     return {s["preset"]: s for s in scenarios}
 
 
-def plan(fights="win", gold=None, levels=None, level_above=None, label=None):
+def plan(fights="win", gold=None, levels=None, label=None):
     return ScenarioPlan(
         fights,
         label,
         {parse_round(k): v for k, v in (gold or {}).items()},
         {parse_round(k): v for k, v in (levels or {}).items()},
-        level_above,
     )
 
 
@@ -475,30 +474,17 @@ def test_a_level_already_reached_costs_nothing_and_a_missing_level_is_refused():
             custom(plan("w", levels={"2-1": target}), start=rich)
 
 
-def test_level_above_buys_xp_with_every_whole_four_gold_over_the_line():
-    rich = Start(round=(2, 1), level=4, xp=0, gold=100)
-    first = custom(plan("w", level_above=50), start=rich)[0]["series"][0]
-    # 2-1: 109, 59 over the line is 14 purchases: 56 gold, 56 XP; 2 natural + 56 is level 6, 28 in
-    assert first["gold"] == 53 and first["leveling"] == 56 and first["bought_xp"] == 56
-    assert first["level"] == 6
-
-
-def test_level_above_stops_at_the_top_of_the_xp_table():
-    top = Start(round=(2, 1), level=9, xp=80, gold=300)
-    scenario = custom(plan("w", level_above=0), start=top)[0]
-    first, second = scenario["series"]
-    # 2 natural XP leaves 2 of 84: one purchase is enough, and level 10 takes no more
-    assert first["leveling"] == 4 and first["level"] == 10
-    assert second["leveling"] == 0 and scenario["bought_xp"] == 4
-
-
-def test_a_round_gains_gold_then_levels_to_its_target_then_buys_above_the_line():
+def test_a_round_gains_gold_then_levels_to_its_target():
     rich = Start(round=(2, 1), level=4, xp=0, gold=0)
-    first = custom(
-        plan("w", gold={"2-1": 20}, levels={"2-1": 5}, level_above=10), start=rich
-    )[0]["series"][0]
-    # 4 + 20 = 24, level 5 costs 8 -> 16, then one purchase over the line of 10 -> 12
-    assert first["gold"] == 12 and first["leveling"] == 12 and first["bought_xp"] == 12
+    first = custom(plan("w", gold={"2-1": 20}, levels={"2-1": 5}), start=rich)[0]["series"][0]
+    # 4 + 20 = 24, and level 5 costs 8
+    assert first["gold"] == 16 and first["leveling"] == 8 and first["bought_xp"] == 8
+
+
+def test_spare_gold_is_never_spent_on_xp_without_a_level_target():
+    rich = Start(round=(2, 1), level=4, xp=0, gold=100)
+    scenario = custom(plan("w" * 4), end="2-6", start=rich)[0]
+    assert scenario["leveling"] == 0 and scenario["bought_xp"] == 0 and scenario["ceiling"]
 
 
 def test_the_end_rounds_own_moves_count_before_the_levels_are_priced():
@@ -553,17 +539,15 @@ def test_a_mixed_plan_must_be_affordable_in_every_run():
     assert "only 9 is held" in str(error.value)
 
 
-def test_level_above_never_overspends_in_a_mixed_plan_and_follows_the_gold():
-    win, mixed_run, loss = custom(
-        plan("win", level_above=0), plan("mixed", level_above=0), plan("loss", level_above=0),
-        end="4-2",
-    )
-    # the same order as their gold: the mixed scenario never builds a streak
-    assert win["bought_xp"] > loss["bought_xp"] > mixed_run["bought_xp"] > 0
-    assert all(p["gold"] >= 0 for s in (win, mixed_run, loss) for p in s["series"])
+def test_a_mixed_plans_bought_xp_is_the_same_as_a_fixed_plans():
+    levels = {"3-2": 6}
+    start = Start(round=(2, 1), level=4, xp=0, gold=60)
+    win, mixed_run = custom(plan("win", levels=levels), plan("mixed", levels=levels), end="4-2", start=start)
+    assert mixed_run["bought_xp"] == win["bought_xp"] > 0
+    assert mixed_run["leveling"] == win["leveling"]
 
 
 def test_a_custom_call_is_the_same_every_time():
-    plans = [plan("mixed", gold={"2-2": -9}, levels={"3-2": 5}, level_above=20)]
+    plans = [plan("mixed", gold={"2-2": -9}, levels={"3-2": 5})]
     start = Start(round=(2, 1), level=4, xp=0, gold=30)
     assert custom(*plans, end="4-2", start=start) == custom(*plans, end="4-2", start=start)

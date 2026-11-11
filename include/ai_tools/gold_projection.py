@@ -3,8 +3,8 @@
 A projection walks the rounds from the start (2-1 by default) to the end round, once for each
 Scenario. A Scenario says which PvP fights are won or lost (every one, none, a seeded mix, or
 a string of w and l, one letter per PvP fight) and, if it wants, what is spent or gained along
-the way: gold by round (units bought, gold the masterlist doesn't hold), level targets by
-round, and a line above which every spare 4 gold buys XP. The three presets, win, mixed and
+the way: gold by round (units bought, gold the masterlist doesn't hold) and level targets
+by round, which are the only thing that buys XP. The three presets, win, mixed and
 loss, spend nothing, so interest is as high as it can be and their gold is a ceiling, not a
 forecast; HP is not modelled either, so win and loss are bounds on income rather than likely
 games. It reports what the player holds at the end round's planning phase, before that
@@ -13,7 +13,7 @@ round's fight, after the round's own spending.
 A round's income reaches the planning phase in this order: interest on the balance carried
 in, passive income, the reward of the round before (neutrals, carousel, or the win and streak
 gold of a fight), then the gold of an augment taken that round. Then the round's own moves
-happen in order: its gold entry, its level target and the XP bought above the line. Streak
+happen in order: its gold entry, then its level target. Streak
 gold follows the real run of PvP results, which carousels and neutrals never break. The mixed
 scenario picks 2 or 3 PvP rounds per stage at random as wins, so it is averaged over seeded
 runs: the same input always gives the same answer.
@@ -136,15 +136,13 @@ class ScenarioPlan:
     `fights` is a preset (win, mixed or loss) or a string of w and l, one letter per PvP
     fight from the start round, never deciding the end round's own fight. `gold` is the gold
     each round gains (positive) or spends on units (negative); `levels` the level to be at
-    after each round's gold entry; `level_above` a line above which each round buys XP with
-    every spare 4 gold.
+    after each round's gold entry.
     """
 
     fights: str = "win"
     label: str | None = None
     gold: dict[Round, int] = field(default_factory=dict)
     levels: dict[Round, int] = field(default_factory=dict)
-    level_above: int | None = None
 
 
 class Overspend(ValueError):
@@ -375,8 +373,6 @@ def validate_plan(plan: ScenarioPlan, label: str, rounds: list[Round], rules: Ru
             raise ValueError(
                 f"{label}: the level at {name_round(rnd)} must be from 2 to {top}, not {target}"
             )
-    if plan.level_above is not None and not 0 <= plan.level_above <= MAX_GOLD:
-        raise ValueError(f"{label}: level_above must be between 0 and {MAX_GOLD}")
 
 
 def run_plan(
@@ -409,8 +405,8 @@ def mixed(
     plan: ScenarioPlan,
 ) -> list[dict]:
     """The mixed scenario: each stage's wins are 2 or 3 of its PvP rounds at random, and the
-    runs are averaged. Gold, and the XP a level line buys with it, depend on the results; the
-    rest is the same in every run. A plan has to be affordable in every run."""
+    runs are averaged. Only gold depends on the results, so the other totals are the same in
+    every run. A plan has to be affordable in every run."""
     rng = random.Random(MIXED_SEED)
     by_stage: dict[int, list[Round]] = {}
     for rnd in pvp:
@@ -440,8 +436,6 @@ def mixed(
     series = [dict(point) for point in all_runs[0]]
     for i, point in enumerate(series):
         point["gold"] = sum(run[i]["gold"] for run in all_runs) / runs
-        point["leveling"] = round(sum(run[i]["leveling"] for run in all_runs) / runs)
-        point["bought_xp"] = round(sum(run[i]["bought_xp"] for run in all_runs) / runs)
         point["income"] = {
             source: round(sum(run[i]["income"][source] for run in all_runs) / runs, 1)
             for source in point["income"]
@@ -464,7 +458,6 @@ def simulate(
     `gained` and `leveling` what its own moves did to it, and the rest running totals since
     the start. Raises Overspend when a move costs more than is held.
     """
-    top = max(rules.xp_to_level_up) + 1
     gold, free_rolls, natural_xp, augment_xp, bought_xp = start.gold, 0, 0, 0, 0
     streak, reward = start.streak, 0
     series = []
@@ -492,13 +485,6 @@ def simulate(
             cost = xp_cost(xp_missing(level, xp, target, rules), rules)
             if cost > gold:
                 raise Overspend(rnd, f"reaching level {target}", gold, cost, carried)
-            gold -= cost
-            leveling += cost
-            bought_xp += cost // rules.buy_xp_gold * rules.buy_xp
-        if plan.level_above is not None and gold > plan.level_above:
-            level, xp = level_after(start, natural_xp + augment_xp + bought_xp, rules)
-            room = xp_cost(xp_missing(level, xp, top, rules), rules)
-            cost = min((gold - plan.level_above) // rules.buy_xp_gold * rules.buy_xp_gold, room)
             gold -= cost
             leveling += cost
             bought_xp += cost // rules.buy_xp_gold * rules.buy_xp

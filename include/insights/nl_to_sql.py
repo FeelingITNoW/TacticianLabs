@@ -29,7 +29,7 @@ from google import genai
 from google.api_core import exceptions
 from google.cloud import bigquery
 from google.genai import types
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from ai_tools import gold_projection as gold_projection_calculator
 from ai_tools import roll_odds as roll_odds_calculator
@@ -114,11 +114,12 @@ class LevelMove(BaseModel):
 
 
 class ScenarioChoice(BaseModel):
+    model_config = ConfigDict(extra="forbid")  # a stale argument is an error, not ignored
+
     fights: str
     label: str | None = None
     gold: list[GoldMove] = []
     levels: list[LevelMove] = []
-    level_above: int | None = None
 
 
 @dataclass
@@ -419,7 +420,6 @@ def _scenario_plan(choice: ScenarioChoice) -> gold_projection_calculator.Scenari
         label=choice.label,
         gold=by_round(choice.gold, "gold"),
         levels=by_round(choice.levels, "levels"),
-        level_above=choice.level_above,
     )
 
 
@@ -555,9 +555,8 @@ def _ask(
         round, carousels and neutrals skipped, and not the end round's own fight: 11 letters
         reach 4-2, 15 reach 4-7), a label, gold (a list of {round, gold}: negative is gold spent
         on units, positive gold gained that the augments don't give), levels (a list of {round,
-        level}: the level to be at after that round's gold, the tool buys the XP) and
-        level_above (spend every spare 4 gold over this amount on XP each round). Every round
-        pays its income, then its gold, then its level, then level_above. A scenario that
+        level}: the level to be at after that round's gold, the tool buys the XP; only levels
+        spend gold on XP). Every round pays its income, then its gold, then its level. A scenario that
         spends more than it holds returns an error with the balances. start_round (default
         2-1), start_level, start_xp, start_gold and start_streak (positive wins in a row,
         negative losses) only when the user gave them. Returns end_round and per scenario its

@@ -7,3 +7,4 @@ An input could look like
 where each round represents a round from 2-1 to 4-2, where inputs -4, -4, -16, and -24 were used on leveling, 12 and 20 were gold gained from augments, and the others were spent on buying units. This would be used to make the gold projection resemble a real game more. For lose streak, it would be closer to full zeroes in order to save as much gold as possible, with spending all gold in leveling that is above 50. 
 
 Additionally, remove the natural XP earned and Free Rolls tables as they do not add any value.
+
