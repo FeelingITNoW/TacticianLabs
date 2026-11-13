@@ -253,7 +253,7 @@ function LegendKey({ swatch, label }: { swatch: string; label: string }) {
 
 function goldBars(series: GoldProjectionPoint[], fill: string, rollFill: string): Bar[] {
   return series.map((point, i) => {
-    const { interest, passive, reward, augment } = point.income
+    const { interest, passive, reward, carousel, augment } = point.income
     const bought = point.boughtXp - (series[i - 1]?.boughtXp ?? 0)
     return {
       round: point.round,
@@ -271,10 +271,14 @@ function goldBars(series: GoldProjectionPoint[], fill: string, rollFill: string)
               { label: `${point.freeRolls} Free Rolls`, value: amount(point.freeRollGold) },
             ]
           : []),
-        { label: 'Income this round', value: `+${amount(interest + passive + reward + augment)}` },
-        { label: 'Interest', value: amount(interest) },
-        { label: 'Passive', value: amount(passive) },
-        { label: "Last round's reward", value: amount(reward) },
+        { label: 'Income this round', value: `+${amount(interest + passive + reward + carousel + augment)}` },
+        ...(point.kind === 'carousel'
+          ? [{ label: 'Carousel unit', value: amount(carousel) }]
+          : [
+              { label: 'Interest', value: amount(interest) },
+              { label: 'Passive', value: amount(passive) },
+              { label: "Last round's reward", value: amount(reward) },
+            ]),
         ...(augment > 0 ? [{ label: 'Augment', value: amount(augment) }] : []),
         ...(point.gained > 0 ? [{ label: 'Gained', value: `+${amount(point.gained)}` }] : []),
         ...(point.spent > 0 ? [{ label: 'Spent on units', value: `-${amount(point.spent)}` }] : []),

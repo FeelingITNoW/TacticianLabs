@@ -211,7 +211,7 @@ export interface GoldProjectionPoint {
   /** The level this round's XP, bought included, reaches */
   level: number
   /** What this round added to the gold, by source (averages, so maybe not whole, in the mixed scenario) */
-  income: { interest: number; passive: number; reward: number; augment: number }
+  income: { interest: number; passive: number; reward: number; carousel: number; augment: number }
 }
 
 /** One step of the XP curve; what is missing and costs at the end round is per Scenario */

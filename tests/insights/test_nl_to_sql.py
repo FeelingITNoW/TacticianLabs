@@ -574,6 +574,17 @@ def test_gold_projection_turns_the_moves_into_rounds_and_amounts(masterlist):
     assert points["2-5"]["leveling"] > 0
 
 
+def test_gold_projection_takes_a_carousel_value_per_round(masterlist):
+    answer = nl_to_sql.Answer(text="")
+    scenarios = [{"fights": "w" * 4, "carousels": [{"round": "2-4", "gold": 1}]}]
+
+    projection(answer, "2-6", scenarios=scenarios)
+
+    [shown] = answer.gold_projections
+    points = {p["round"]: p for p in shown["scenarios"][0]["series"]}
+    assert points["2-4"]["income"]["carousel"] == 1
+
+
 @pytest.mark.parametrize(
     "scenarios, message",
     [
@@ -584,6 +595,9 @@ def test_gold_projection_turns_the_moves_into_rounds_and_amounts(masterlist):
         ([{"label": "no fights"}], "fights"),
         ([{"fights": "win"}] * 4, "at most 3"),
         ([{"fights": "win", "level_above": 50}], "level_above"),
+        ([{"fights": "w" * 4, "carousels": [{"round": "2-4", "gold": 9}]}], "worth 1 to 3"),
+        ([{"fights": "w" * 4, "carousels": [{"round": "2-4", "gold": 2}] * 2}], "more than once"),
+        ([{"fights": "w" * 4, "gold": [{"round": "2-4", "gold": -1}]}], "carousel"),
     ],
 )
 def test_gold_projection_bad_scenarios_go_back_to_the_model(masterlist, scenarios, message):

@@ -113,6 +113,11 @@ class LevelMove(BaseModel):
     level: int
 
 
+class CarouselMove(BaseModel):
+    round: str
+    gold: int  # what the unit picked up at that carousel is worth
+
+
 class ScenarioChoice(BaseModel):
     model_config = ConfigDict(extra="forbid")  # a stale argument is an error, not ignored
 
@@ -120,6 +125,7 @@ class ScenarioChoice(BaseModel):
     label: str | None = None
     gold: list[GoldMove] = []
     levels: list[LevelMove] = []
+    carousels: list[CarouselMove] = []
 
 
 @dataclass
@@ -412,7 +418,7 @@ def _scenario_plan(choice: ScenarioChoice) -> gold_projection_calculator.Scenari
             rnd = parse_round(move.round)
             if rnd in result:
                 raise ValueError(f"{name} has round {move.round} more than once")
-            result[rnd] = move.gold if name == "gold" else move.level
+            result[rnd] = move.level if name == "levels" else move.gold
         return result
 
     return gold_projection_calculator.ScenarioPlan(
@@ -420,6 +426,7 @@ def _scenario_plan(choice: ScenarioChoice) -> gold_projection_calculator.Scenari
         label=choice.label,
         gold=by_round(choice.gold, "gold"),
         levels=by_round(choice.levels, "levels"),
+        carousels=by_round(choice.carousels, "carousels"),
     )
 
 
@@ -556,7 +563,11 @@ def _ask(
         reach 4-2, 15 reach 4-7), a label, gold (a list of {round, gold}: negative is gold spent
         on units, positive gold gained that the augments don't give), levels (a list of {round,
         level}: the level to be at after that round's gold, the tool buys the XP; only levels
-        spend gold on XP). Every round pays its income, then its gold, then its level. A scenario that
+        spend gold on XP), carousels (a list of {round, gold}: what the unit picked up at an x-4
+        carousel is worth, 1 to 3 in stage 2, 1 to 4 in stage 3, 1 to 5 from stage 4; the
+        default is 3, so only pass it when the user says what they took or its value). A
+        carousel pays no passive, interest or gold, only that unit, and takes no gold or level
+        entry, start_round or end_round. Every round pays its income, then its gold, then its level. A scenario that
         spends more than it holds returns an error with the balances. start_round (default
         2-1), start_level, start_xp, start_gold and start_streak (positive wins in a row,
         negative losses) only when the user gave them. Returns end_round and per scenario its

@@ -40,12 +40,13 @@ def project(end="4-2", augments=None, start=START, **kwargs):
     return {s["preset"]: s for s in scenarios}
 
 
-def plan(fights="win", gold=None, levels=None, label=None):
+def plan(fights="win", gold=None, levels=None, label=None, carousels=None):
     return ScenarioPlan(
         fights,
         label,
         {parse_round(k): v for k, v in (gold or {}).items()},
         {parse_round(k): v for k, v in (levels or {}).items()},
+        {parse_round(k): v for k, v in (carousels or {}).items()},
     )
 
 
@@ -76,18 +77,29 @@ def test_a_loss_streak_pays_streak_gold_and_no_win_gold():
     assert golds(project("2-3")["loss"]) == [4, 9, 15]
 
 
-def test_carousels_and_neutrals_pay_a_round_late_and_keep_the_streak():
-    win = golds(project("3-1")["win"])
-    # 2-4 is a carousel, which pays 3 at 2-5; 2-7 is neutrals, which pay 6 at 3-1
-    deltas = [b - a for a, b in zip(win, win[1:])]
-    rounds = [point["round"] for point in project("3-1")["win"]["series"]]
+def test_a_carousel_pays_only_its_unit_and_the_fight_before_it_is_paid_after_it():
+    series = project("3-1")["win"]["series"]
+    rounds = [point["round"] for point in series]
     assert rounds == ["2-1", "2-2", "2-3", "2-4", "2-5", "2-6", "2-7", "3-1"]
-    assert deltas[3] == 5 + 4 + 1  # 2-4: interest on 28 is 2, +5 passive +the win/streak of 2-3
-    assert deltas[6] >= 5 + 6  # 3-1 pays the neutrals' 6 on top of passive
-    # a win at 2-5 is the 4th win in a row: the carousel and nothing else did not break it
-    assert project("2-6")["win"]["series"][5]["gold"] - win[4] == (
-        win[4] // 10 + 5 + 1 + 2  # interest, passive, win gold, streak of 4
-    )
+    # 2-3 holds 18; 2-4 is a carousel: no interest, passive or reward, just the unit's 3
+    assert series[3]["income"] == {
+        "interest": 0, "passive": 0, "reward": 0, "carousel": 3, "augment": 0
+    }
+    assert series[3]["gold"] == 18 + 3
+    # 2-5 pays what 2-3's fight earned (win 1, streak of 2 pays 1), with interest on the 21
+    assert series[4]["income"] == {
+        "interest": 2, "passive": 5, "reward": 2, "carousel": 0, "augment": 0
+    }
+    assert series[4]["gold"] == 21 + 2 + 5 + 2
+    # neutrals at 2-7 still pay 6 at 3-1, and the carousel did not break the streak: the win
+    # at 2-5 is the 4th in a row (win 1 + streak 2), paid at 2-6
+    assert series[7]["income"]["reward"] == 6
+    assert series[5]["income"]["reward"] == 1 + 2
+
+
+def test_a_carousel_still_gives_natural_xp():
+    series = project("2-5")["win"]["series"]
+    assert [point["natural_xp"] for point in series] == [2, 4, 6, 8, 10]
 
 
 def test_the_end_rounds_own_fight_is_not_counted():
@@ -336,7 +348,9 @@ def test_every_round_says_its_kind_level_and_income():
         "pvp", "pvp", "pvp", "carousel", "pvp", "pvp", "neutral"
     ]
     assert [point["level"] for point in series][:3] == [3, 3, 4]
-    assert series[2]["income"] == {"interest": 1, "passive": 5, "reward": 2, "augment": 0}
+    assert series[2]["income"] == {
+        "interest": 1, "passive": 5, "reward": 2, "carousel": 0, "augment": 0
+    }
     # neutrals at 2-7 pay at 3-1
     assert series[7]["income"]["reward"] == 6
 
@@ -365,7 +379,7 @@ def end_of(*plans, end=None, start=START):
 def test_a_fight_string_sets_the_end_round_to_the_round_after_its_last_fight():
     # 2-1 to 4-1 is 11 PvP fights, 4-2 the 12th... 15 fights end at 4-7
     assert end_of(plan("w" * 15)) == "4-7"
-    assert end_of(plan("wlw")) == "2-4"
+    assert end_of(plan("wlw")) == "2-5"  # the fight after 2-3 is 2-5: 2-4 is a carousel
     assert end_of(plan("w" * 11)) == "4-2"
     assert end_of(plan("w")) == "2-2"
 
@@ -377,9 +391,10 @@ def test_a_fight_string_is_one_letter_per_pvp_fight_and_matches_the_presets():
 
 def test_a_mixed_fight_string_follows_the_streak_through_a_win_then_a_loss():
     # 2-1: 4. A win (streak 1, pays 1) -> 2-2: 4 + 5 + 1 = 10. A loss breaks the streak and pays 0
-    # -> 2-3: 10 + 1 interest + 5 = 16. A win pays 1, a streak of 1 pays 0 -> 2-4: 16 + 1 + 5 + 1
+    # -> 2-3: 10 + 1 interest + 5 = 16. 2-4 is a carousel: +3 = 19. A win at 2-3 pays 1, a streak
+    # of 1 pays 0, which 2-5 gets: 19 + 1 interest + 5 + 1
     scenario = custom(plan("wlw"))[0]
-    assert golds(scenario) == [4, 10, 16, 23]
+    assert golds(scenario) == [4, 10, 16, 19, 26]
     assert scenario["fights"] == "wlw" and scenario["preset"] is None
 
 
@@ -412,17 +427,17 @@ def test_fight_strings_that_end_at_different_rounds_are_refused():
 def test_presets_and_strings_can_share_a_call():
     result = custom(plan("mixed"), plan("wlw"))
     assert [s["preset"] for s in result] == ["mixed", None]
-    assert result[0]["series"][-1]["round"] == "2-4"
+    assert result[0]["series"][-1]["round"] == "2-5"
 
 
 def test_labels_default_to_the_preset_name_or_a_number_and_can_be_set():
-    result = custom(plan("win"), plan("wlw"), plan("loss", label="Save it"), end="2-4")
+    result = custom(plan("win"), plan("wlw"), plan("loss", label="Save it"), end="2-5")
     assert [s["label"] for s in result] == ["Win streak", "Custom 2", "Save it"]
 
 
 def test_a_call_runs_at_most_three_scenarios():
     with pytest.raises(ValueError, match="at most 3"):
-        custom(*[plan("win")] * 4, end="2-4")
+        custom(*[plan("win")] * 4, end="2-5")
 
 
 def test_gold_entries_spend_and_gain_in_their_round():
@@ -551,3 +566,45 @@ def test_a_custom_call_is_the_same_every_time():
     plans = [plan("mixed", gold={"2-2": -9}, levels={"3-2": 5})]
     start = Start(round=(2, 1), level=4, xp=0, gold=30)
     assert custom(*plans, end="4-2", start=start) == custom(*plans, end="4-2", start=start)
+
+
+def test_a_carousel_value_replaces_the_default_and_earns_interest_afterwards():
+    base = custom(plan("w" * 4), end="2-6")[0]["series"]
+    poor = custom(plan("w" * 4, carousels={"2-4": 1}), end="2-6")[0]["series"]
+    assert poor[3]["income"]["carousel"] == 1 and poor[3]["gold"] == base[3]["gold"] - 2
+    # 21 gold earns 2 interest at 2-5, 19 only 1
+    assert poor[4]["income"]["interest"] == base[4]["income"]["interest"] - 1
+
+
+@pytest.mark.parametrize(
+    "round_, value, ok",
+    [("2-4", 3, True), ("2-4", 4, False), ("3-4", 4, True), ("3-4", 5, False),
+     ("4-4", 5, True), ("4-4", 6, False), ("2-4", 0, False), ("2-4", 1, True)],
+)
+def test_a_carousel_value_is_limited_by_its_stage(round_, value, ok):
+    scenario = plan("w" * 15, carousels={round_: value})
+    if ok:
+        custom(scenario, end="4-7")
+    else:
+        with pytest.raises(ValueError, match="must be worth 1 to"):
+            custom(scenario, end="4-7")
+
+
+def test_a_carousel_override_must_name_a_carousel_inside_the_projection():
+    with pytest.raises(ValueError, match="not a carousel"):
+        custom(plan("w" * 4, carousels={"2-3": 3}), end="2-6")
+    with pytest.raises(ValueError, match="not a carousel"):
+        custom(plan("w" * 4, carousels={"3-4": 3}), end="2-6")
+
+
+@pytest.mark.parametrize("moves", [{"gold": {"2-4": -1}}, {"levels": {"2-4": 5}}])
+def test_gold_and_level_entries_on_a_carousel_are_refused(moves):
+    with pytest.raises(ValueError, match="carousel.*use 2-5"):
+        custom(plan("w" * 4, **moves), end="2-6")
+
+
+def test_a_carousel_cannot_be_the_start_or_the_end_round():
+    with pytest.raises(ValueError, match="end_round 2-4 is a carousel.*use 2-5"):
+        custom(plan("win"), end="2-4")
+    with pytest.raises(ValueError, match="start_round can't be a carousel.*use 3-5"):
+        custom(plan("win"), end="4-2", start=Start(round=(3, 4), level=4, xp=0, gold=0))

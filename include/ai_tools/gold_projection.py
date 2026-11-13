@@ -11,9 +11,11 @@ games. It reports what the player holds at the end round's planning phase, befor
 round's fight, after the round's own spending.
 
 A round's income reaches the planning phase in this order: interest on the balance carried
-in, passive income, the reward of the round before (neutrals, carousel, or the win and streak
-gold of a fight), then the gold of an augment taken that round. Then the round's own moves
-happen in order: its gold entry, then its level target. Streak
+in, passive income, the reward of the round before (neutrals, or the win and streak gold of a
+fight), then the gold of an augment taken that round. Then the round's own moves happen in
+order: its gold entry, then its level target. A carousel has no planning phase and pays no
+gold: it adds only the value of the unit picked up (3 on average, or what a Scenario says),
+and the reward of the fight before it waits for the round after. Streak
 gold follows the real run of PvP results, which carousels and neutrals never break. The mixed
 scenario picks 2 or 3 PvP rounds per stage at random as wins, so it is averaged over seeded
 runs: the same input always gives the same answer.
@@ -34,6 +36,9 @@ from ai_tools.roll_odds import ROLL_COST
 
 ROUNDS_PER_STAGE = 7
 CAROUSEL_ROUND = 4
+# The most a carousel unit may be worth, by stage (stage 4 and later: 5); the least is 1
+MAX_CAROUSEL_GOLD = {2: 3, 3: 4}
+MAX_CAROUSEL_GOLD_LATE = 5
 NEUTRAL_ROUND = 7
 FIRST_ROUND = (2, 1)
 # The latest and earliest rounds a projection may end on
@@ -64,7 +69,7 @@ class Rules:
     passive_first: int = 4  # passive gold at 2-1
     passive: int = 5  # and from 2-2 on
     neutral_gold: int = 6  # paid after a neutral round, on average
-    carousel_gold: int = 3  # paid after a carousel, on average
+    carousel_gold: int = 3  # the unit picked up at a carousel, on average
     win_gold: int = 1  # for winning a PvP fight
     # (streak length at least, gold), ascending; a streak pays the last tier it reached
     streak_tiers: tuple[tuple[int, int], ...] = ((2, 1), (4, 2), (5, 3))
@@ -136,13 +141,15 @@ class ScenarioPlan:
     `fights` is a preset (win, mixed or loss) or a string of w and l, one letter per PvP
     fight from the start round, never deciding the end round's own fight. `gold` is the gold
     each round gains (positive) or spends on units (negative); `levels` the level to be at
-    after each round's gold entry.
+    after each round's gold entry. `carousels` is what the unit picked up at a carousel round
+    is worth, where it isn't the default.
     """
 
     fights: str = "win"
     label: str | None = None
     gold: dict[Round, int] = field(default_factory=dict)
     levels: dict[Round, int] = field(default_factory=dict)
+    carousels: dict[Round, int] = field(default_factory=dict)
 
 
 class Overspend(ValueError):
@@ -292,6 +299,7 @@ def resolve_end(end_round: str | None, plans: list[ScenarioPlan], start: Start) 
     ]
     if end_round:
         end = parse_round(end_round)
+        refuse_carousel(end, "end_round")
         fights = [r for r in rounds_between(start.round, end)[:-1] if round_kind(r) == "pvp"]
         for letters in strings:
             if len(letters) != len(fights):
@@ -309,11 +317,20 @@ def resolve_end(end_round: str | None, plans: list[ScenarioPlan], start: Start) 
                 f"fights has {len(letters)} letters but at most {len(latest)} PvP fights fit "
                 f"between {name_round(start.round)} and {name_round(LATEST_END)}"
             )
-        ends[letters] = next_round(latest[len(letters) - 1])
+        end = next_round(latest[len(letters) - 1])
+        ends[letters] = next_round(end) if round_kind(end) == "carousel" else end
     if len(set(ends.values())) > 1:
         shown = ", ".join(f"{len(s)} letters end at {name_round(e)}" for s, e in ends.items())
         raise ValueError(f"the fight strings end at different rounds ({shown}); make them the same length")
     return next(iter(ends.values()), parse_round(DEFAULT_END))
+
+
+def refuse_carousel(rnd: Round, what: str) -> None:
+    if round_kind(rnd) == "carousel":
+        raise ValueError(
+            f"{what} {name_round(rnd)} is a carousel, which has no planning phase; use "
+            f"{name_round(next_round(rnd))}"
+        )
 
 
 def validate(
@@ -324,6 +341,11 @@ def validate(
         raise ValueError(
             f"end_round must be between {name_round(EARLIEST_END)} and {name_round(LATEST_END)}, "
             f"not {name_round(end)}"
+        )
+    if round_kind(start.round) == "carousel":
+        raise ValueError(
+            f"start_round can't be a carousel, which has no planning phase; use "
+            f"{name_round(next_round(start.round))}"
         )
     if not FIRST_ROUND <= start.round < end:
         raise ValueError(
@@ -365,6 +387,21 @@ def validate_plan(plan: ScenarioPlan, label: str, rounds: list[Round], rules: Ru
                     f"{label}: {kind} has round {name_round(rnd)}, but the projection runs "
                     f"{name_round(rounds[0])} to {name_round(rounds[-1])}"
                 )
+    for kind, moves in (("gold", plan.gold), ("levels", plan.levels)):
+        for rnd in moves:
+            refuse_carousel(rnd, f"{label}: {kind} at")
+    for rnd, value in plan.carousels.items():
+        if rnd not in rounds or round_kind(rnd) != "carousel":
+            raise ValueError(
+                f"{label}: carousels has round {name_round(rnd)}, which is not a carousel "
+                f"from {name_round(rounds[0])} to {name_round(rounds[-1])}"
+            )
+        most = MAX_CAROUSEL_GOLD.get(rnd[0], MAX_CAROUSEL_GOLD_LATE)
+        if not 1 <= value <= most:
+            raise ValueError(
+                f"{label}: the carousel at {name_round(rnd)} must be worth 1 to {most} gold, "
+                f"not {value}"
+            )
     for rnd, amount in plan.gold.items():
         if abs(amount) > MAX_GOLD:
             raise ValueError(f"{label}: gold at {name_round(rnd)} must be within {MAX_GOLD}")
@@ -465,11 +502,17 @@ def simulate(
         carried = [(p["round"], p["gold"]) for p in series]
         taken = [pick.augment for pick in augments if pick.slot <= rnd]
         cap = rules.interest_cap + sum(a.max_interest for a in taken)
+        kind = round_kind(rnd)
         interest = min(gold // rules.interest_per, cap)
         passive = rules.passive_first if rnd == FIRST_ROUND else rules.passive
+        paid = reward
+        carousel = 0
+        if kind == "carousel":
+            interest = passive = paid = 0
+            carousel = plan.carousels.get(rnd, rules.carousel_gold)
         new_picks = [pick.augment for pick in augments if pick.slot == rnd]
         augment_gold = sum(a.gold for a in new_picks)
-        gold += interest + passive + reward + augment_gold
+        gold += interest + passive + paid + carousel + augment_gold
         natural_xp += rules.natural_xp
         augment_xp += sum(a.xp_per_round for a in taken)
         free_rolls += sum(a.free_rolls for a in new_picks)
@@ -489,7 +532,6 @@ def simulate(
             leveling += cost
             bought_xp += cost // rules.buy_xp_gold * rules.buy_xp
 
-        kind = round_kind(rnd)
         series.append(
             {
                 "round": name_round(rnd),
@@ -505,16 +547,16 @@ def simulate(
                 "income": {
                     "interest": interest,
                     "passive": passive,
-                    "reward": reward,
+                    "reward": paid,
+                    "carousel": carousel,
                     "augment": augment_gold,
                 },
             }
         )
-        reward = 0
+        if kind != "carousel":
+            reward = 0
         if kind == "neutral":
             reward = rules.neutral_gold
-        elif kind == "carousel":
-            reward = rules.carousel_gold
         elif rnd in wins:
             won = wins[rnd]
             streak = (max(streak, 0) + 1) if won else (min(streak, 0) - 1)
