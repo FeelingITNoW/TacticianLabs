@@ -4,12 +4,14 @@ Run with `PYTHONPATH=include python -m insights.nl_to_sql "which champions are b
 Needs Application Default Credentials, GOOGLE_CLOUD_PROJECT, GEMINI_API_KEY and
 GEMINI_SQL_MODEL (the Gemini model that writes the SQL).
 
-The model gets two tools. `sql` (run_sql) dry-runs each query first and refuses
+The model gets three tools. `sql` (run_sql) dry-runs each query first and refuses
 anything that isn't a SELECT over prompt.VIEWS or that would bill more than
 MAX_BYTES_BILLED. Every view reads precomputed counters (3-item builds and comps' star
 levels, items and board costs included), so a question costs kilobytes to megabytes.
 `roll_odds` (run_roll_odds) looks the units' costs up in current_champion_stats and gives the
 odds of rolling a board at several amounts of gold (ai_tools/roll_odds.py).
+`gold_projection` (run_gold_projection) resolves augments against the masterlist and projects the
+gold, XP and Free Rolls a player has by a round (ai_tools/gold_projection.py).
 Errors go back to the model as the tool result, so it can fix its own call. The text the model reads lives in insights/prompt.py.
 """
 
@@ -21,13 +23,15 @@ import re
 import sys
 import time
 from dataclasses import dataclass, field
+from functools import cache
 
 from google import genai
 from google.api_core import exceptions
 from google.cloud import bigquery
 from google.genai import types
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
+from ai_tools import gold_projection as gold_projection_calculator
 from ai_tools import roll_odds as roll_odds_calculator
 from db.bq import DATASET, make_client, table_ref
 from insights import prompt
@@ -73,6 +77,15 @@ class RollOddsRun:
     error: str | None = None
 
 
+@dataclass
+class GoldProjectionRun:
+    """One gold_projection call, as the model made it. The results are not kept, only the inputs."""
+
+    args: dict
+    latency_ms: int = 0
+    error: str | None = None
+
+
 class UnitNeed(BaseModel):
     name: str
     copies: int
@@ -82,6 +95,37 @@ class UnitNeed(BaseModel):
 class TierOut(BaseModel):
     cost: int
     copies: int
+
+
+class AugmentChoice(BaseModel):
+    name: str
+    slot: str
+
+
+# Lists of these rather than maps from round to amount, which Gemini's tool schema can't describe
+class GoldMove(BaseModel):
+    round: str
+    gold: int
+
+
+class LevelMove(BaseModel):
+    round: str
+    level: int
+
+
+class CarouselMove(BaseModel):
+    round: str
+    gold: int  # what the unit picked up at that carousel is worth
+
+
+class ScenarioChoice(BaseModel):
+    model_config = ConfigDict(extra="forbid")  # a stale argument is an error, not ignored
+
+    fights: str
+    label: str | None = None
+    gold: list[GoldMove] = []
+    levels: list[LevelMove] = []
+    carousels: list[CarouselMove] = []
 
 
 @dataclass
@@ -94,6 +138,9 @@ class Answer:
     # The successful roll_odds results, for the page to show
     roll_odds: list[dict] = field(default_factory=list)
     roll_odds_runs: list[RollOddsRun] = field(default_factory=list)
+    # The successful gold_projection results, with the series the page charts
+    gold_projections: list[dict] = field(default_factory=list)
+    gold_projection_runs: list[GoldProjectionRun] = field(default_factory=list)
     model: str = ""
     prompt_sha256: str = ""
 
@@ -295,6 +342,129 @@ def _roll_odds(client, level, units, tier_out, gold) -> dict:
     }
 
 
+def augment_masterlist() -> dict[str, gold_projection_calculator.Augment]:
+    """The augments the projection knows, by name."""
+    return _augment_masterlist()
+
+
+@cache
+def _augment_masterlist() -> dict[str, gold_projection_calculator.Augment]:
+    return gold_projection_calculator.load_augments()
+
+
+def run_gold_projection(
+    end_round: str | None,
+    augments: list | None,
+    scenarios: list | None,
+    start_round: str | None,
+    start_level: int | None,
+    start_xp: int | None,
+    start_gold: int | None,
+    start_streak: int | None,
+    answer: Answer,
+) -> dict:
+    """Run the gold projection. Problems come back as {"error": ...}, not exceptions.
+
+    Every call is recorded in answer.gold_projection_runs, and a successful one in
+    answer.gold_projections, with the series the page charts. The model gets the result
+    without the series.
+    """
+    run = GoldProjectionRun(
+        args={
+            "end_round": end_round,
+            "augments": augments,
+            "scenarios": scenarios,
+            "start_round": start_round,
+            "start_level": start_level,
+            "start_xp": start_xp,
+            "start_gold": start_gold,
+            "start_streak": start_streak,
+        }
+    )
+    started = time.perf_counter()
+    try:
+        full = _gold_projection(
+            end_round,
+            augments,
+            scenarios,
+            start_round,
+            start_level,
+            start_xp,
+            start_gold,
+            start_streak,
+        )
+        answer.gold_projections.append(full)
+        result = {
+            **full,
+            "scenarios": [
+                {key: value for key, value in scenario.items() if key != "series"}
+                for scenario in full["scenarios"]
+            ],
+        }
+    except ValueError as exc:  # pydantic's ValidationError is one too
+        run.error = str(exc)
+        result = {"error": run.error}
+    run.latency_ms = round((time.perf_counter() - started) * 1000)
+    answer.gold_projection_runs.append(run)
+    return result
+
+
+def _scenario_plan(choice: ScenarioChoice) -> gold_projection_calculator.ScenarioPlan:
+    parse_round = gold_projection_calculator.parse_round
+
+    def by_round(moves: list, name: str) -> dict:
+        result = {}
+        for move in moves:
+            rnd = parse_round(move.round)
+            if rnd in result:
+                raise ValueError(f"{name} has round {move.round} more than once")
+            result[rnd] = move.level if name == "levels" else move.gold
+        return result
+
+    return gold_projection_calculator.ScenarioPlan(
+        fights=choice.fights,
+        label=choice.label,
+        gold=by_round(choice.gold, "gold"),
+        levels=by_round(choice.levels, "levels"),
+        carousels=by_round(choice.carousels, "carousels"),
+    )
+
+
+def _gold_projection(
+    end_round, augments, scenarios, start_round, start_level, start_xp, start_gold, start_streak
+) -> dict:
+    calculator = gold_projection_calculator
+    choices = [AugmentChoice.model_validate(a) for a in augments or []]
+    masterlist = {_normalise(name): aug for name, aug in augment_masterlist().items()}
+    unknown = [c.name for c in choices if _normalise(c.name) not in masterlist]
+    if unknown:
+        names = ", ".join(sorted(a.name for a in masterlist.values()))
+        raise ValueError(
+            f"Unknown augment(s): {', '.join(unknown)}. "
+            + (f"Use these names: {names}" if names else "The augment masterlist is empty.")
+        )
+    picks = [
+        calculator.AugmentPick(masterlist[_normalise(c.name)], calculator.parse_round(c.slot))
+        for c in choices
+    ]
+    rules = calculator.RULES
+    start = calculator.Start(
+        round=calculator.parse_round(start_round) if start_round else calculator.FIRST_ROUND,
+        level=rules.start_level if start_level is None else start_level,
+        xp=rules.start_xp if start_xp is None else start_xp,
+        gold=rules.start_gold if start_gold is None else start_gold,
+        streak=start_streak or 0,
+    )
+    plans = [_scenario_plan(ScenarioChoice.model_validate(c)) for c in scenarios or []]
+    result = calculator.calculate_gold_projection(
+        end_round, picks, start, scenarios=plans or None
+    )
+    result["augments"] = [
+        {"slot": calculator.name_round(p.slot), **vars(p.augment)} for p in picks
+    ]
+    return result
+
+
 def build_contents(question: str, history: list[dict] | None) -> list[types.Content]:
     """Earlier turns (only their text, last MAX_HISTORY_TURNS) followed by the question."""
     turns = (history or [])[-MAX_HISTORY_TURNS:]
@@ -371,7 +541,58 @@ def _ask(
         """
         return run_roll_odds(client, level, units, tier_out, gold, answer)
 
-    tools = {"sql": sql, "roll_odds": roll_odds}
+    def gold_projection(
+        end_round: str | None = None,
+        augments: list[AugmentChoice] | None = None,
+        scenarios: list[ScenarioChoice] | None = None,
+        start_round: str | None = None,
+        start_level: int | None = None,
+        start_xp: int | None = None,
+        start_gold: int | None = None,
+        start_streak: int | None = None,
+    ) -> dict:
+        """Gold, XP and Free Rolls a player has by a round, for up to three scenarios.
+
+        end_round: a round from 2-2 to 5-2; the figures are what the player holds in its
+        planning phase, before its fight. Leave it out (default 4-2) to let a scenario's fights
+        set it. augments: each augment by masterlist name and the slot it was taken at (2-1, 3-2
+        or 4-2), at most one per slot. scenarios: leave out for the win, mixed and loss presets
+        with nothing spent (their gold is a ceiling). Otherwise up to three, each with fights
+        (win, mixed, loss, or a string of w and l with one letter per PvP fight from the start
+        round, carousels and neutrals skipped, and not the end round's own fight: 11 letters
+        reach 4-2, 15 reach 4-7), a label, gold (a list of {round, gold}: negative is gold spent
+        on units, positive gold gained that the augments don't give), levels (a list of {round,
+        level}: the level to be at after that round's gold, the tool buys the XP; only levels
+        spend gold on XP), carousels (a list of {round, gold}: what the unit picked up at an x-4
+        carousel is worth, 1 to 3 in stage 2, 1 to 4 in stage 3, 1 to 5 from stage 4; the
+        default is 3, so only pass it when the user says what they took or its value). A
+        carousel pays no passive, interest or gold, only that unit, and takes no gold or level
+        entry, start_round or end_round. Every round pays its income, then its gold, then its level. A scenario that
+        spends more than it holds returns an error with the balances. start_round (default
+        2-1), start_level, start_xp, start_gold and start_streak (positive wins in a row,
+        negative losses) only when the user gave them. Returns end_round and per scenario its
+        label, fights, ceiling (true when nothing is spent), the gold held after the end
+        round's spending, free_rolls, free_roll_gold (2 gold a Free Roll), total_gold (gold plus
+        free_roll_gold), natural_xp, augment_xp, bought_xp, spent (on units), gained, leveling
+        (gold spent on XP), the level reached, for levels 8 and 9 the xp_missing, gold_cost
+        (4-gold purchases, from the XP held then; level 9 includes level 8) and leftover to roll
+        with (Free Rolls included; negative is a shortfall of gold), and a level_curve of every
+        level from the start's to 9 (xp, total_xp, reached_at, xp_missing, gold_cost), or
+        {"error": ...}.
+        """
+        return run_gold_projection(
+            end_round,
+            augments,
+            scenarios,
+            start_round,
+            start_level,
+            start_xp,
+            start_gold,
+            start_streak,
+            answer,
+        )
+
+    tools = {"sql": sql, "roll_odds": roll_odds, "gold_projection": gold_projection}
 
     def call_tool(call):
         fn = tools.get(call.name)

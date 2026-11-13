@@ -57,6 +57,33 @@ Paying 2 gold to redraw the Shop.
 Buying every Copy a Board still needs. Roll odds say how likely a Hit is at an amount of gold.
 _Avoid_: find, land
 
+**Round**:
+One step of a game, named by its Stage and place in it, such as 4-2: a PvP fight, a carousel or neutrals.
+
+**Stage**:
+A numbered block of seven Rounds; the first number in a Round's name.
+
+**Streak**:
+Consecutive PvP fights all won or all lost, which pays extra gold. Carousels and neutrals do not break it.
+
+**Interest**:
+Bonus gold paid each Round for the gold a player holds, up to a cap that some augments raise.
+
+**Free Roll**:
+A Roll an augment grants, which costs no gold.
+_Avoid_: reroll
+
+**XP**:
+What levels a player up: earned each Round, granted by augments, or bought with gold.
+_Avoid_: exp
+
+**Projection**:
+The gold, XP and Free Rolls a player has by a Round under each Scenario; with nothing spent, the gold is a ceiling.
+
+**Scenario**:
+One way a Projection's Rounds go: which PvP fights are won or lost, and what is spent or gained each Round. The presets are win (every fight won), loss (every one lost) and mixed (some of each, averaged), with nothing spent.
+_Avoid_: line, path, streak scenario
+
 **Conversation**:
 One /ask thread, from its first question until the visitor starts a new chat. Anonymous: it names no person.
 

@@ -1,0 +1,1 @@
+Adjust gold spending controls to explicitly use L
