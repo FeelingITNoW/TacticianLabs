@@ -190,10 +190,97 @@ export interface RollOddsRun {
   curve: RollOddsRow[]
 }
 
+/** What a projection has at a round's planning phase, before spending; the totals run since the start */
+export interface GoldProjectionPoint {
+  round: string
+  kind: 'pvp' | 'carousel' | 'neutral'
+  /** What is held after the round's own spending */
+  gold: number
+  /** The Free Rolls at what a roll costs, and the gold with them */
+  freeRollGold: number
+  totalGold: number
+  naturalXp: number
+  augmentXp: number
+  /** XP bought with gold, up to and including this round */
+  boughtXp: number
+  freeRolls: number
+  /** Gold this round spent on units and gained, and spent on XP */
+  spent: number
+  gained: number
+  leveling: number
+  /** The level this round's XP, bought included, reaches */
+  level: number
+  /** What this round added to the gold, by source (averages, so maybe not whole, in the mixed scenario) */
+  income: { interest: number; passive: number; reward: number; carousel: number; augment: number }
+}
+
+/** One step of the XP curve; what is missing and costs at the end round is per Scenario */
+export interface GoldProjectionCurveLevel {
+  level: number
+  /** XP from the level below */
+  xp: number
+  /** XP from the start of the projection */
+  totalXp: number
+  /** The round the XP reaches this level, bought XP included, if it does by the end round */
+  reachedAt: string | null
+  xpMissing: number
+  goldCost: number
+}
+
+/** What reaching a level costs: the XP still missing, the gold that buys it, and what is left to roll with, Free Rolls included (negative is a shortfall of gold) */
+export interface GoldProjectionLevel {
+  xpMissing: number
+  goldCost: number
+  leftover: number
+}
+
+export type GoldProjectionPreset = 'win' | 'mixed' | 'loss'
+
+export interface GoldProjectionScenario {
+  label: string
+  /** The preset it is, or null for a custom plan */
+  preset: GoldProjectionPreset | null
+  /** A custom plan's fights, a letter per PvP fight, w or l */
+  fights: string | null
+  /** True when nothing is spent, so the gold is a ceiling */
+  ceiling: boolean
+  /** What is held after the end round's spending */
+  gold: number
+  /** The Free Rolls at what a roll costs, and the gold with them */
+  freeRollGold: number
+  totalGold: number
+  naturalXp: number
+  augmentXp: number
+  boughtXp: number
+  freeRolls: number
+  /** Gold spent on units and gained over the projection, and spent on XP */
+  spent: number
+  gained: number
+  leveling: number
+  /** The level the XP, bought included, reaches */
+  level: number
+  /** By target level, 8 and 9 */
+  levels: Record<string, GoldProjectionLevel>
+  /** Every level from the start's to 9 */
+  levelCurve: GoldProjectionCurveLevel[]
+  /** One point per round from the start to the end round: what the charts draw */
+  series: GoldProjectionPoint[]
+}
+
+/** One gold_projection call the agent made: what it asked and what came back */
+export interface GoldProjectionRun {
+  endRound: string
+  start: { round: string; level: number; xp: number; gold: number; streak: number }
+  augments: { name: string; slot: string; gold: number; freeRolls: number; xpPerRound: number; maxInterest: number }[]
+  scenarios: GoldProjectionScenario[]
+}
+
 export interface AgentAnswer {
   text: string
   /** The SQL the agent ran, in order */
   queries: string[]
   /** The roll odds the agent worked out, in order */
   rollOdds: RollOddsRun[]
+  /** The gold projections the agent worked out, in order */
+  goldProjections: GoldProjectionRun[]
 }

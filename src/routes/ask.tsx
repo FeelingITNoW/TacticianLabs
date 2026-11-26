@@ -6,8 +6,10 @@ import { getCompsFn, getVariantsFn } from '@/data/compositions.functions'
 import { getReferenceListsFn } from '@/data/meta.functions'
 import type { AgentAnswer, AgentTurn } from '@/data/types'
 import { AgentMarkdown } from '@/components/agent-markdown'
+import { GoldProjectionCharts } from '@/components/gold-projection-charts'
 import { RollOddsCard } from '@/components/roll-odds-card'
 import { RollOddsChart } from '@/components/roll-odds-chart'
+import { distinctGoldProjections } from '@/lib/gold-projection'
 import { distinctRollOdds } from '@/lib/roll-odds'
 import { PageHeader } from '@/components/page-states'
 import { Button } from '@/components/ui/button'
@@ -140,6 +142,13 @@ function AskPage() {
                       <div className="mt-4 space-y-4">
                         {distinctRollOdds(exchange.answer.rollOdds).map((run, i) => (
                           <RollOddsChart key={i} run={run} />
+                        ))}
+                      </div>
+                    )}
+                    {exchange.answer.goldProjections.length > 0 && (
+                      <div className="mt-4 space-y-6">
+                        {distinctGoldProjections(exchange.answer.goldProjections).map((run, i) => (
+                          <GoldProjectionCharts key={i} run={run} />
                         ))}
                       </div>
                     )}

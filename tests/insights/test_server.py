@@ -11,7 +11,10 @@ CONVERSATION = "0b1f6a0e-6a4e-4c53-9d5b-1c2a3b4c5d6e"
 
 def fake_ask(question, history):
     return SimpleNamespace(
-        text=f"{question}|{len(history)}", queries=["SELECT 1"], roll_odds=[{"level": 8}]
+        text=f"{question}|{len(history)}",
+        queries=["SELECT 1"],
+        roll_odds=[{"level": 8}],
+        gold_projections=[{"end_round": "4-2"}],
     )
 
 
@@ -26,6 +29,7 @@ def test_happy_path():
         "text": "best Taric build?|1",
         "queries": ["SELECT 1"],
         "roll_odds": [{"level": 8}],
+        "gold_projections": [{"end_round": "4-2"}],
     }
     assert write_log is None  # no conversation_id, nothing to log
 

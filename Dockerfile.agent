@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1 PYTHONPATH=/app/include
 COPY requirements-agent.txt ./
 RUN pip install --no-cache-dir -r requirements-agent.txt
 
-# insights imports db.bq and ai_tools (the roll odds calculator) only, so those are all it needs
+# insights imports db.bq and ai_tools (the roll odds and gold projection calculators) only, so those are all it needs
 COPY include/insights ./include/insights
 COPY include/ai_tools ./include/ai_tools
 COPY include/db/bq.py ./include/db/bq.py

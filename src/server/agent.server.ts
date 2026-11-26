@@ -1,5 +1,14 @@
 import '@tanstack/react-start/server-only'
-import type { AgentAnswer, AgentTurn, RollOddsRow, RollOddsRun } from '@/data/types'
+import type {
+  AgentAnswer,
+  AgentTurn,
+  GoldProjectionPoint,
+  GoldProjectionPreset,
+  GoldProjectionRun,
+  GoldProjectionScenario,
+  RollOddsRow,
+  RollOddsRun,
+} from '@/data/types'
 
 // The SQL agent is a separate Python service (include/insights/server.py)
 const AGENT_URL = process.env.AGENT_URL ?? 'http://127.0.0.1:8001'
@@ -34,6 +43,7 @@ export async function askAgent(
     text: body.text,
     queries: body.queries ?? [],
     rollOdds: (body.roll_odds ?? []).map(toRollOdds),
+    goldProjections: (body.gold_projections ?? []).map(toGoldProjection),
   }
 }
 
@@ -48,6 +58,7 @@ interface AgentBody {
     results: RawRollOddsRow[]
     curve: RawRollOddsRow[]
   }[]
+  gold_projections?: RawGoldProjection[]
 }
 
 interface RawRollOddsRow {
@@ -74,4 +85,125 @@ function toRollOdds(run: NonNullable<AgentBody['roll_odds']>[number]): RollOddsR
 
 function toRollOddsRow(row: RawRollOddsRow): RollOddsRow {
   return { gold: row.gold, rolls: row.rolls, allUnits: row.all_units, perUnit: row.per_unit }
+}
+
+interface RawGoldProjectionPoint {
+  round: string
+  kind: GoldProjectionPoint['kind']
+  gold: number
+  free_roll_gold: number
+  total_gold: number
+  natural_xp: number
+  augment_xp: number
+  bought_xp: number
+  free_rolls: number
+  spent: number
+  gained: number
+  leveling: number
+  level: number
+  income: GoldProjectionPoint['income']
+}
+
+interface RawGoldProjectionCurveLevel {
+  level: number
+  xp: number
+  total_xp: number
+  reached_at: string | null
+  xp_missing: number
+  gold_cost: number
+}
+
+interface RawGoldProjectionScenario {
+  label: string
+  preset: GoldProjectionPreset | null
+  fights: string | null
+  ceiling: boolean
+  gold: number
+  free_roll_gold: number
+  total_gold: number
+  natural_xp: number
+  augment_xp: number
+  bought_xp: number
+  free_rolls: number
+  spent: number
+  gained: number
+  leveling: number
+  level: number
+  levels: Record<string, { xp_missing: number; gold_cost: number; leftover: number }>
+  level_curve: RawGoldProjectionCurveLevel[]
+  series: RawGoldProjectionPoint[]
+}
+
+interface RawGoldProjection {
+  end_round: string
+  start: GoldProjectionRun['start']
+  augments: { name: string; slot: string; gold: number; free_rolls: number; xp_per_round: number; max_interest: number }[]
+  scenarios: RawGoldProjectionScenario[]
+}
+
+function toGoldProjection(run: RawGoldProjection): GoldProjectionRun {
+  const scenario = (raw: RawGoldProjectionScenario): GoldProjectionScenario => ({
+    label: raw.label,
+    preset: raw.preset,
+    fights: raw.fights,
+    ceiling: raw.ceiling,
+    gold: raw.gold,
+    freeRollGold: raw.free_roll_gold,
+    totalGold: raw.total_gold,
+    naturalXp: raw.natural_xp,
+    augmentXp: raw.augment_xp,
+    boughtXp: raw.bought_xp,
+    freeRolls: raw.free_rolls,
+    spent: raw.spent,
+    gained: raw.gained,
+    leveling: raw.leveling,
+    level: raw.level,
+    levels: Object.fromEntries(
+      Object.entries(raw.levels).map(([level, row]) => [
+        level,
+        { xpMissing: row.xp_missing, goldCost: row.gold_cost, leftover: row.leftover },
+      ]),
+    ),
+    levelCurve: raw.level_curve.map((row) => ({
+      level: row.level,
+      xp: row.xp,
+      totalXp: row.total_xp,
+      reachedAt: row.reached_at,
+      xpMissing: row.xp_missing,
+      goldCost: row.gold_cost,
+    })),
+    series: raw.series.map(toGoldProjectionPoint),
+  })
+  return {
+    endRound: run.end_round,
+    start: run.start,
+    augments: run.augments.map((a) => ({
+      name: a.name,
+      slot: a.slot,
+      gold: a.gold,
+      freeRolls: a.free_rolls,
+      xpPerRound: a.xp_per_round,
+      maxInterest: a.max_interest,
+    })),
+    scenarios: run.scenarios.map(scenario),
+  }
+}
+
+function toGoldProjectionPoint(point: RawGoldProjectionPoint): GoldProjectionPoint {
+  return {
+    round: point.round,
+    kind: point.kind,
+    gold: point.gold,
+    freeRollGold: point.free_roll_gold,
+    totalGold: point.total_gold,
+    naturalXp: point.natural_xp,
+    augmentXp: point.augment_xp,
+    boughtXp: point.bought_xp,
+    freeRolls: point.free_rolls,
+    spent: point.spent,
+    gained: point.gained,
+    leveling: point.leveling,
+    level: point.level,
+    income: point.income,
+  }
 }
